@@ -1,0 +1,9 @@
+# پیش‌نمایش‌ها و فایل‌های کاری
+work/
+node_modules/
+*.log
+.env
+data/
+__pycache__/
+*.pyc
+.claude/
