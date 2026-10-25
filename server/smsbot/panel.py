@@ -117,8 +117,16 @@ class Panel:
         s = self.call("GET", "/panel/api/server/status") or {}
         return {"version": s.get("panelVersion") or s.get("appVersion") or ""}
 
+    @property
+    def configured(self):
+        return bool(self.base and (self.token or (self.username and self.password)))
+
     def detect_host(self):
-        """آدرس عمومی سرور برای لینک‌ها: دامنهٔ پنل، دامنهٔ ساب، یا آی‌پی عمومی سرور."""
+        """آدرس عمومی سرور برای لینک‌ها. پنل روی سرور دیگه: همون آدرسی که باهاش وصل می‌شیم (مثل خود پنل
+        که لینک رو با آدرس مرورگر می‌سازه). پنل روی همین سرور (127.0.0.1): دامنهٔ پنل یا آی‌پی عمومی سرور."""
+        url_host = urllib.parse.urlparse(self.base).hostname or ""
+        if url_host and url_host != "localhost" and not url_host.startswith("127.") and url_host != "::1":
+            return url_host
         try:
             s = self.settings()
             if s.get("webDomain") or s.get("subDomain"):

@@ -72,6 +72,9 @@ class Engine:
     # ───── هشدارها ─────
     def check_alerts(self, s):
         p = self.panel(s["panel"])
+        if not p.configured:
+            self.panel_status.update(ok=None, error="", checkedAt=0)
+            return
         try:
             raw = p.clients()
             self.mark_panel(True)
@@ -201,7 +204,8 @@ class Engine:
         p, ph = self.panel_status, self.phone_status
         ago = lambda t: int((time.time() - t) // 60) if t else None
         return {
-            "panel": {"ok": p["ok"], "type": "3X-UI", "version": p["version"], "checkedAgo": ago(p["checkedAt"]), "error": p["error"]},
+            "panel": {"ok": p["ok"], "configured": self.panel(s["panel"]).configured, "type": "3X-UI", "version": p["version"],
+                      "checkedAgo": ago(p["checkedAt"]), "error": p["error"]},
             "phone": {"ok": ph["ok"], "configured": self.gateway(s["phone"]).configured, "device": ph["device"],
                       "lastSeenAgo": ph["lastSeenAgo"], "error": ph["error"]},
             "smsToday": self.db.sent_today(), "dailyLimit": int(s["sending"].get("dailyLimit") or 50),

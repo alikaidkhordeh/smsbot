@@ -8,7 +8,7 @@ import threading
 from . import util
 
 DEFAULT_SETTINGS = {
-    "panel": {"type": "3x-ui", "url": "http://127.0.0.1:2053/", "auth": "token", "token": "",
+    "panel": {"type": "3x-ui", "url": "", "auth": "token", "token": "",
               "username": "", "password": "", "linkHost": ""},
     "phone": {"mode": "cloud", "url": "https://api.sms-gate.app/3rdparty/v1", "username": "", "password": "",
               "line1": "خط ۱", "line2": "خط ۲", "defaultLine": 1},

@@ -15,14 +15,17 @@ function nearMeta(c, st) {
 }
 
 App.pages.dashboard = async view => {
-  const [s, clients, rules, history] = await Promise.all([api.status(), api.clients(), api.rules(), api.history()]);
+  const [s, rules, history] = await Promise.all([api.status(), api.rules(), api.history()]);
+  // پنل هنوز وصل نشده (نصب تازه) → داشبورد بدون لیست کانفیگ‌ها و یه راهنما
+  const clients = s.panel.configured === false ? [] : await api.clients().catch(err => { s.panel.ok = false; s.panel.error = err.message; return []; });
   const rows = clients.map(c => ({ c, st: clientState(c, rules) }));
   const near = rows.filter(r => r.st.near);
   const active = rows.filter(r => !r.st.ended).length;
   const noPhone = clients.filter(c => !c.phone).length;
   const ago = m => (m == null ? '' : m < 1 ? 'همین الان' : `${fa(m)} دقیقه پیش`);
   const pill = (dot, label) => `<span class="pill ${dot === 'danger' ? 'danger' : dot}"><span class="dot ${dot}"></span>${label}</span>`;
-  const panelSub = s.panel.ok === false ? `<span style="color:var(--danger)">${esc(s.panel.error)}</span>`
+  const panelSub = s.panel.configured === false ? 'هنوز وصل نشده؛ از <a href="#/settings">تنظیمات</a> آدرس و رمز پنل رو بده'
+    : s.panel.ok === false ? `<span style="color:var(--danger)">${esc(s.panel.error)}</span>`
     : `${s.panel.version ? `نسخهٔ <span class="ltr">${esc(s.panel.version)}</span> · ` : ''}${s.panel.checkedAgo != null ? 'آخرین بررسی ' + ago(s.panel.checkedAgo) : 'در حال بررسی…'}`;
   const phoneSub = !s.phone.configured ? 'هنوز وصل نشده؛ از <a href="#/settings">تنظیمات</a> وصلش کن'
     : s.phone.ok === false ? `<span style="color:var(--danger)">${esc(s.phone.error)}</span>`
@@ -33,7 +36,7 @@ App.pages.dashboard = async view => {
       <div class="card"><div class="card-head" style="margin:0">
         <span class="ico">${icon('server')}</span>
         <div><h2>پنل ${esc(s.panel.type)}</h2><p>${panelSub}</p></div>
-        <span class="spacer"></span>${pill(statusDot(s.panel), s.panel.ok === true ? 'وصله' : s.panel.ok === false ? 'قطعه' : 'بررسی')}
+        <span class="spacer"></span>${s.panel.configured === false ? pill('warn', 'تنظیم نشده') : pill(statusDot(s.panel), s.panel.ok === true ? 'وصله' : s.panel.ok === false ? 'قطعه' : 'بررسی')}
       </div></div>
       <div class="card"><div class="card-head" style="margin:0">
         <span class="ico">${icon('mobile')}</span>
@@ -48,6 +51,8 @@ App.pages.dashboard = async view => {
       <div class="card stat"><span class="label">${icon('send', 'i-sm')}پیامک امروز</span><span class="value">${fa(s.smsToday)}</span><span class="sub">از سقف ${fa(s.dailyLimit)} پیامک${s.queued ? ` · ${fa(s.queued)} در صف` : ''}</span></div>
       <div class="card stat"><span class="label">${icon('phone', 'i-sm')}بدون شماره</span><span class="value">${fa(noPhone)}</span><span class="sub"><a href="#/clients?f=nophone">ثبت شماره‌ها</a></span></div>
     </div>
+
+    ${s.panel.configured === false || !s.phone.configured ? `<div class="banner">${icon('settings')}<p>برای شروع، از تنظیمات ${s.panel.configured === false ? 'پنل' : ''}${s.panel.configured === false && !s.phone.configured ? ' و ' : ''}${!s.phone.configured ? 'گوشی' : ''} رو وصل کن.</p><a class="btn btn-sm btn-primary" href="#/settings">تنظیمات</a></div>` : ''}
 
     ${noPhone ? `<div class="banner">${icon('phone')}<p>${fa(noPhone)} کانفیگ هنوز شماره ندارن و پیامک هشدار براشون نمی‌ره.</p><a class="btn btn-sm btn-primary" href="#/clients?f=nophone">ثبت شماره</a></div>` : ''}
 

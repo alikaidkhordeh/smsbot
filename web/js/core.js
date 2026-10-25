@@ -149,6 +149,40 @@ async function copyText(text) {
   }
 }
 
+// ───── نصب به‌صورت برنامه (بدون نوار آدرس، با آیکون روی صفحهٔ گوشی) ─────
+// فقط روی https کار می‌کنه (مثلاً پشت کلادفلر)؛ روی http مرورگر اجازهٔ نصب نمی‌ده.
+const Install = {
+  prompt: null,
+  init() {
+    if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => {});
+    addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      Install.prompt = e;
+      Install.refresh();
+    });
+    addEventListener('appinstalled', () => {
+      Install.prompt = null;
+      Install.refresh();
+      toast('برنامه نصب شد؛ از صفحهٔ گوشی بازش کن');
+    });
+    Install.refresh();
+  },
+  get standalone() { return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; },
+  get ios() { return /iphone|ipad|ipod/i.test(navigator.userAgent); },
+  available() { return !Install.standalone && (!!Install.prompt || (Install.ios && window.isSecureContext)); },
+  refresh() { $$('[data-action="install"]').forEach(b => { b.hidden = !Install.available(); }); },
+  async run() {
+    closeModal();
+    if (Install.prompt) {
+      Install.prompt.prompt();
+      await Install.prompt.userChoice;
+      Install.prompt = null;
+      return Install.refresh();
+    }
+    openModal(`${modalHead('نصب روی آیفون')}<p>تو Safari دکمهٔ «اشتراک‌گذاری» (مربع با فلش رو به بالا) رو بزن و «Add to Home Screen» رو انتخاب کن.</p>`);
+  },
+};
+
 // ───── حالت تیره و روشن ─────
 const Theme = {
   saved() { try { return localStorage.getItem('smsbot-theme'); } catch { return null; } },
@@ -196,6 +230,7 @@ function openMore() {
   const s = openSheet(`<div class="stack-sm">
     ${PAGES.filter(p => !p.tab).map(p => `<a class="nav-link" href="#/${p.id}">${icon(p.icon)}<span>${p.title}</span></a>`).join('')}
     <div class="divider" style="margin:6px 0"></div>
+    ${Install.available() ? `<button class="nav-link" data-action="install">${icon('download')}<span>نصب به‌صورت برنامه</span></button>` : ''}
     <button class="nav-link" data-action="theme">${icon(Theme.isDark() ? 'sun' : 'moon')}<span>تغییر حالت تیره و روشن</span></button>
     <button class="nav-link" data-action="logout">${icon('logout')}<span>خروج</span></button>
   </div>`);
@@ -214,7 +249,7 @@ async function renderTopStatus() {
   try {
     const s = await api.status();
     $('#topStatus').innerHTML = `
-      <span class="status-chip" title="${esc(s.panel.error)}"><span class="dot ${statusDot(s.panel)}"></span>پنل ${s.panel.ok === true ? 'وصله' : s.panel.ok === false ? 'قطعه' : 'در حال بررسی'}</span>
+      <span class="status-chip" title="${esc(s.panel.error)}"><span class="dot ${s.panel.configured === false ? 'warn' : statusDot(s.panel)}"></span>پنل ${s.panel.configured === false ? 'تنظیم نشده' : s.panel.ok === true ? 'وصله' : s.panel.ok === false ? 'قطعه' : 'در حال بررسی'}</span>
       <span class="status-chip" title="${esc(s.phone.error)}"><span class="dot ${s.phone.configured ? statusDot(s.phone) : 'warn'}"></span>گوشی ${phoneLabel(s.phone)}</span>`;
   } catch { /* اگه سرور در دسترس نبود، همون قبلی بمونه */ }
 }
@@ -278,6 +313,7 @@ const App = {
     renderNav();
     Theme.apply(Theme.saved());
     bindGlobalEvents();
+    Install.init();
     const me = await api.me().catch(() => ({ loggedIn: false }));
     if (!me.loggedIn) await renderLogin(me);
     await App.loadLines();
@@ -310,6 +346,7 @@ function bindGlobalEvents() {
     if (action === 'close') return closeModal();
     if (action === 'more') return openMore();
     if (action === 'retry') return App.go();
+    if (action === 'install') return Install.run();
     if (action === 'logout') {
       closeModal();
       return api.logout().catch(() => {}).then(() => renderLogin()).then(() => App.go());

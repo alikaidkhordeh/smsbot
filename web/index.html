@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f4f5f8">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="پنل پیامک">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <title>پنل پیامک</title>
 <link rel="stylesheet" href="app.css">
 </head>
@@ -53,6 +60,7 @@
     </div>
     <nav class="side-nav" id="sideNav"></nav>
     <div class="side-foot">
+      <button class="nav-link" data-action="install" hidden><svg class="i"><use href="#i-download"/></svg><span>نصب به‌صورت برنامه</span></button>
       <button class="nav-link" data-action="theme"><svg class="i"><use href="#i-moon"/></svg><span>تغییر حالت تیره و روشن</span></button>
       <button class="nav-link" data-action="logout"><svg class="i"><use href="#i-logout"/></svg><span>خروج</span></button>
     </div>

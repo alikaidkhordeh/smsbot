@@ -25,6 +25,7 @@ SESSION_IDLE_MS = 30 * util.DAY_MS
 MAX_BODY = 4 * 1024 * 1024
 mimetypes.add_type("text/javascript", ".js")
 mimetypes.add_type("font/ttf", ".ttf")
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 
 class ApiError(Exception):
@@ -101,9 +102,10 @@ class Handler(BaseHTTPRequestHandler):
         with open(full, "rb") as f:
             data = f.read()
         ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
-        if ctype.startswith("text/") or ctype.endswith("javascript"):
+        if ctype.startswith("text/") or ctype.endswith(("javascript", "json")):
             ctype += "; charset=utf-8"
-        cache = "no-cache" if full.endswith(".html") else "public, max-age=300"
+        # صفحه و سرویس‌ورکر همیشه تازه؛ بقیه ۵ دقیقه (کلادفلر هم همین رو رعایت می‌کنه)
+        cache = "no-cache" if full.endswith((".html", "sw.js", ".webmanifest")) else "public, max-age=300"
         self._headers(200, ctype, len(data), {
             "Cache-Control": cache,
             "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
@@ -124,11 +126,15 @@ class Handler(BaseHTTPRequestHandler):
         return bool(tok) and self.app.db.touch_session(tok, SESSION_IDLE_MS)
 
     def _cookie(self, value, max_age):
-        secure = "; Secure" if self.app.https else ""
+        # پشت کلادفلر، https رو کلادفلر می‌ده و به برنامه http می‌رسه؛ X-Forwarded-Proto اینو می‌گه
+        https = self.app.https or self.headers.get("X-Forwarded-Proto") == "https"
+        secure = "; Secure" if https else ""
         return "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d%s" % (COOKIE, value, max_age, secure)
 
     def _client_ip(self):
-        return self.client_address[0]
+        """آی‌پی واقعی بازدیدکننده (پشت کلادفلر همهٔ درخواست‌ها از آی‌پی کلادفلر میان)."""
+        fwd = self.headers.get("CF-Connecting-IP") or (self.headers.get("X-Forwarded-For") or "").split(",")[0]
+        return fwd.strip() or self.client_address[0]
 
     # ───── مسیریابی ─────
     def _dispatch(self, method):
@@ -269,6 +275,8 @@ class App:
 
         # ───── کانفیگ‌ها ─────
         def panel_call(fn, *args, **kw):
+            if not e.panel().configured:
+                raise ApiError("پنل هنوز وصل نشده؛ از تنظیمات ← «اتصال به پنل» آدرس و نام کاربری و رمز پنل رو وارد کن.", 409)
             try:
                 out = fn(*args, **kw)
                 e.mark_panel(True)
@@ -545,6 +553,8 @@ class App:
             for c in ("cert", "key"):
                 if app.get(c) and not os.path.isfile(app[c]):
                     raise ApiError("فایل گواهی پیدا نشد: " + app[c])
+            if panel.get("url") != old["panel"].get("url") and panel.get("linkHost") == old["panel"].get("linkHost"):
+                panel["linkHost"] = ""  # آدرس پنل عوض شد → آدرس لینک‌ها دوباره خودکار پیدا بشه
             for k, v in (("panel", panel), ("phone", phone), ("sending", sending), ("app", app)):
                 d.save_section(k, v)
             restart = any(old["app"].get(k) != app.get(k) for k in ("port", "cert", "key"))

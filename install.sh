@@ -11,7 +11,9 @@ BRANCH="${SMSBOT_BRANCH:-main}"
 DIR="/opt/smsbot"
 DATA="$DIR/data"
 SERVICE="smsbot"
-PORT="${SMSBOT_PORT:-8090}"
+# پورت‌هایی که کلادفلر (ابر نارنجی) با https پشتیبانی می‌کنه؛ اولین پورت آزاد انتخاب می‌شه
+CF_PORTS="8443 2083 2087 2053 2096 443"
+PORT="${SMSBOT_PORT:-}"
 XUI_DB="${XUI_DB:-/etc/x-ui/x-ui.db}"
 XUI_BIN="${XUI_BIN:-/usr/local/x-ui/x-ui}"
 
@@ -76,8 +78,9 @@ chmod 700 "$DATA"
 
 # ───── 3. read panel settings ─────
 green "[3/6] Reading 3X-UI settings..."
-PANEL_URL="" LINK_HOST="" CERT="" KEY="" TOKEN=""
+PANEL_URL="" LINK_HOST="" CERT="" KEY="" TOKEN="" LOCAL_PANEL=0
 if [ -f "$XUI_DB" ]; then
+  LOCAL_PANEL=1
   eval "$(python3 - "$XUI_DB" <<'PY'
 import shlex, sqlite3, sys
 c = sqlite3.connect("file:%s?mode=ro" % sys.argv[1], uri=True)
@@ -98,12 +101,11 @@ for k, v in out.items():
     print("%s=%s" % (k, shlex.quote(v)))
 PY
 )"
-  echo "  panel: $PANEL_URL"
+  echo "  panel on this server: $PANEL_URL"
+  # پنل روی همین سرور و بدون دامنه → لینک‌ها با آی‌پی عمومی همین سرور
+  [ -z "$LINK_HOST" ] && LINK_HOST="$(curl -s4 --max-time 6 https://api.ipify.org || true)"
 else
-  yellow "  $XUI_DB not found — connect the panel later from the app's settings page."
-fi
-if [ -z "$LINK_HOST" ]; then
-  LINK_HOST="$(curl -s4 --max-time 6 https://api.ipify.org || true)"
+  echo "  no 3X-UI on this server — you will connect your panel from the app (Settings → Panel)."
 fi
 if [ "$FIRST" = 1 ] && [ -x "$XUI_BIN" ]; then
   TOKEN="$("$XUI_BIN" setting -getApiToken 2>/dev/null | awk '/apiToken:/{print $2}' | tail -n1 || true)"
@@ -115,7 +117,12 @@ green "[4/6] Configuring..."
 port_busy() { python3 -c 'import socket,sys; s=socket.socket(); sys.exit(0 if s.connect_ex(("127.0.0.1", int(sys.argv[1]))) == 0 else 1)' "$1"; }
 if [ "$FIRST" = 1 ]; then
   systemctl stop "$SERVICE" 2>/dev/null || true
-  while port_busy "$PORT"; do PORT=$((PORT + 1)); done
+  if [ -n "$PORT" ]; then
+    port_busy "$PORT" && die "port $PORT is busy — choose another: SMSBOT_PORT=xxxx"
+  else
+    for p in $CF_PORTS; do port_busy "$p" || { PORT="$p"; break; }; done
+    if [ -z "$PORT" ]; then PORT=8090; while port_busy "$PORT"; do PORT=$((PORT + 1)); done; fi
+  fi
   ARGS=(--set-port "$PORT")
   [ -n "$PANEL_URL" ] && ARGS+=(--panel-url "$PANEL_URL")
   [ -n "$TOKEN" ] && ARGS+=(--panel-token "$TOKEN")
@@ -190,3 +197,16 @@ else
   green "  Updated. Your password and settings are unchanged."
 fi
 green "================================================"
+if [ "$LOCAL_PANEL" = 0 ] && [ "$FIRST" = 1 ]; then
+  echo
+  yellow "Next: open the address, log in, go to Settings → Panel, enter your panel address,"
+  yellow "      username and password, and press Connect."
+fi
+case " $CF_PORTS " in *" $PORT "*)
+  echo
+  echo "Cloudflare (optional, for https://your-domain:$PORT):"
+  echo "  1) DNS: A record  sms.yourdomain.com → $APP_HOST  (Proxied, orange cloud)"
+  [ "$SCHEME" = https ] && echo "  2) SSL/TLS mode: Full" || echo "  2) SSL/TLS mode: Flexible"
+  echo "  3) open https://sms.yourdomain.com:$PORT  (or add an Origin Rule to use it without :$PORT)"
+  ;;
+esac

@@ -46,6 +46,8 @@ App.pages.settings = async view => {
   const s = await api.settings();
   const p = s.panel, ph = s.phone, snd = s.sending, app = s.app;
   const savedPh = (has, text = '•••••••• (ذخیره شده)') => (has ? text : '');
+  // هنوز وصل نشده → اول فرم نام کاربری و رمز (راحت‌ترین راه)
+  const authTab = p.has_token ? 'token' : 'login';
 
   view.innerHTML = `<div class="stack" id="setForm">
     <div class="card">
@@ -54,19 +56,19 @@ App.pages.settings = async view => {
         <div class="form-row two">
           <div class="field"><label for="pType">نوع پنل</label>
             <select class="select" id="pType"><option value="3x-ui">3X-UI (نسخهٔ ۳ به بعد)</option><option disabled>پاسارگاد (به‌زودی)</option></select></div>
-          <div class="field"><label for="pUrl">آدرس پنل</label><input class="input ltr" id="pUrl" value="${esc(p.url)}" spellcheck="false" placeholder="http://127.0.0.1:2053/path/">
-            <span class="hint">چون برنامه روی همون سرور پنله، آدرس داخلی (127.0.0.1 با پورت و مسیر پنل) بهترینه.</span></div>
+          <div class="field"><label for="pUrl">آدرس کامل پنل</label><input class="input ltr" id="pUrl" value="${esc(p.url)}" spellcheck="false" placeholder="https://panel.example.com:2053/abc123/">
+            <span class="hint">همون آدرسی که پنل رو تو مرورگر باهاش باز می‌کنی (با http یا https، پورت و مسیر). اگه برنامه روی خود سرور پنله: http://127.0.0.1:پورت/مسیر/</span></div>
         </div>
-        <div class="field"><label for="pHost">آدرس عمومی سرور (برای لینک‌ها)</label>
+        <div class="field"><label for="pHost">آدرس سرور برای لینک‌ها <span class="muted">(اختیاری)</span></label>
           <input class="input ltr" id="pHost" value="${esc(p.linkHost)}" spellcheck="false" placeholder="sv1.example.com">
-          <span class="hint">دامنه یا آی‌پی‌ای که مشتری‌ها باهاش وصل می‌شن؛ لینک‌ها و QR با همین ساخته می‌شن. خالی بذاری، از پنل پیدا می‌شه.</span></div>
-        <div class="field"><span class="label">روش اتصال</span>${ui.seg('pAuth', [{ v: 'token', label: 'توکن API' }, { v: 'login', label: 'با نام کاربری و رمز پنل' }], p.auth === 'login' ? 'login' : 'token')}</div>
-        <div class="stack" id="pTokenBox" ${p.auth === 'login' ? 'hidden' : ''}>
+          <span class="hint">دامنه یا آی‌پی‌ای که تو لینک کانفیگ‌ها میاد. خالی بذاری، همون آدرس پنل استفاده می‌شه (مثل خود پنل).</span></div>
+        <div class="field"><span class="label">روش اتصال</span>${ui.seg('pAuth', [{ v: 'login', label: 'نام کاربری و رمز پنل' }, { v: 'token', label: 'توکن API' }], authTab)}</div>
+        <div class="stack" id="pTokenBox" ${authTab === 'login' ? 'hidden' : ''}>
           <div class="field"><label for="pToken">توکن API</label>
             <input class="input ltr" id="pToken" type="password" placeholder="${savedPh(p.has_token)}" autocomplete="off">
             <span class="hint">از پنل: تنظیمات ← امنیت ← API Token. خالی بذاری، همون قبلی می‌مونه.</span></div>
         </div>
-        <div class="stack" id="pLoginBox" ${p.auth === 'login' ? '' : 'hidden'}>
+        <div class="stack" id="pLoginBox" ${authTab === 'login' ? '' : 'hidden'}>
           <p class="small muted">یک بار با نام کاربری و رمز پنل وارد می‌شم و یه توکن مخصوص این برنامه می‌سازم؛ رمز پنل ذخیره نمی‌شه.</p>
           <div class="form-row two">
             <div class="field"><label for="pUser">نام کاربری پنل</label><input class="input ltr" id="pUser" autocomplete="off"></div>
@@ -130,7 +132,13 @@ App.pages.settings = async view => {
           <div class="field"><label for="aKey">مسیر کلید گواهی</label><input class="input ltr" id="aKey" value="${esc(app.key)}" spellcheck="false" placeholder="/root/cert/.../privkey.pem"></div>
         </div>
         <div class="hstack wrap"><button class="btn btn-sm" id="aUseCert">${icon('lock', 'i-sm')}استفاده از گواهی پنل</button>
-          <span class="small muted">با https رمزت امن‌تر منتقل می‌شه. با تغییر پورت یا گواهی، برنامه خودش دوباره راه‌اندازی می‌شه.</span></div>
+          <span class="small muted">با تغییر پورت یا گواهی، برنامه خودش دوباره راه‌اندازی می‌شه.</span></div>
+        <div class="sms-preview small" style="border-style:solid">
+          <b>نصب روی گوشی مثل برنامه (بدون نوار آدرس):</b> برنامه باید با <b>https</b> باز بشه. راحت‌ترین راه کلادفلره:
+          یه رکورد DNS برای دامنه (مثلاً sms.yourdomain.com) به آی‌پی همین سرور با ابر نارنجی، حالت SSL «Flexible»
+          و پورت برنامه یکی از پورت‌های ۸۴۴۳، ۲۰۸۳، ۲۰۸۷، ۲۰۵۳، ۲۰۹۶ یا ۴۴۳ (نصب‌کننده خودش یکی‌شون رو گذاشته).
+          بعد آدرس https رو تو Chrome گوشی باز کن ← منوی ⋮ ← «نصب برنامه» (یا گزینهٔ «نصب به‌صورت برنامه» تو منوی همین برنامه).
+        </div>
       </div>
     </div>
 
