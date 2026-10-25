@@ -71,7 +71,10 @@ const MOCK = {
 
 const clone = o => JSON.parse(JSON.stringify(o));
 const fakeId = (n, len) => Array.from({ length: len }, (_, i) => ((n * 7919 + i * 104729) % 36).toString(36)).join('');
-MOCK.clients.forEach(c => Object.assign(c, { email: c.account, inboundId: c.id % 3 === 0 ? 2 : 1, limitIp: 0, uuid: fakeId(c.id, 32), subId: fakeId(c.id + 50, 16) }));
+MOCK.clients.forEach(c => {
+  const inboundIds = c.id % 4 === 0 ? [1, 2] : [c.id % 3 === 0 ? 2 : 1];
+  Object.assign(c, { email: c.account, inboundIds, inboundId: inboundIds[0], limitIp: 0, uuid: fakeId(c.id, 32), subId: fakeId(c.id + 50, 16) });
+});
 const byEmail = email => MOCK.clients.find(c => c.email === email);
 
 // QR نمونه (نسخهٔ واقعی QR درست از روی لینک می‌سازه)
@@ -103,7 +106,7 @@ const api = {
     const account = c.account.trim().split(/\s+/).join('-');
     if (MOCK.clients.some(x => x.email.toLowerCase() === account.toLowerCase())) throw new Error('این اسم کانفیگ قبلاً تو پنل هست؛ یه اسم دیگه بذار.');
     const id = Math.max(...MOCK.clients.map(x => x.id)) + 1;
-    const created = { id, email: account, usedGB: 0, enabled: true, alerted: null, uuid: fakeId(id, 32), subId: fakeId(id + 50, 16), ...c, account };
+    const created = { id, email: account, usedGB: 0, enabled: true, alerted: null, uuid: fakeId(id, 32), subId: fakeId(id + 50, 16), ...c, account, inboundId: (c.inboundIds || [1])[0] };
     MOCK.clients.unshift(created);
     return clone(created);
   },

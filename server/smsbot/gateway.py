@@ -23,6 +23,21 @@ class GatewayError(Exception):
     pass
 
 
+def friendly_error(err):
+    """خطاهای انگلیسی اندروید/اپ گوشی → توضیح فارسی با راه حل."""
+    e = err or ""
+    if "SEND_SMS" in e:
+        return ("اپ گوشی اجازهٔ ارسال پیامک نداره. تو گوشی: تنظیمات ← برنامه‌ها ← SMS Gateway ← منوی ⋮ بالای صفحه ← "
+                "«اجازهٔ تنظیمات محدود» (Allow restricted settings)، بعد مجوزها ← پیامک ← اجازه بده.")
+    if "NO_SERVICE" in e:
+        return "سیم‌کارت گوشی آنتن نداره (No service)."
+    if "RADIO_OFF" in e:
+        return "گوشی تو حالت هواپیماست یا سیم‌کارت خاموشه."
+    if "NULL_PDU" in e or "GENERIC_FAILURE" in e:
+        return "اپراتور پیامک رو قبول نکرد؛ شارژ سیم‌کارت یا محدودیت ارسال اپراتور رو چک کن. (" + e + ")"
+    return e
+
+
 class Gateway:
     def __init__(self, cfg):
         url = CLOUD_URL if cfg.get("mode", "cloud") == "cloud" else (cfg.get("url") or "").strip()
@@ -84,7 +99,7 @@ class Gateway:
         r = self._call("GET", "/messages/" + urllib.parse.quote(mid, safe=""))
         rec = (r.get("recipients") or [{}])[0]
         raw = r.get("state") or rec.get("state") or ""
-        return STATE_MAP.get(raw, "sending"), rec.get("error") or "", raw
+        return STATE_MAP.get(raw, "sending"), friendly_error(rec.get("error")), raw
 
     def devices(self):
         out = []

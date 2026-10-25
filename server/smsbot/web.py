@@ -372,7 +372,10 @@ class App:
                 raise ApiError("شماره باید ۱۱ رقم باشه و با ۰۹ شروع بشه.")
             name = str(b.get("name") or "").strip()
             days = _int(b.get("daysLeft"), 0, 0)
-            panel_call(e.panel().add_client, account, _int(b.get("inboundId"), 0),
+            ids = [_int(i) for i in (b.get("inboundIds") or ([b["inboundId"]] if b.get("inboundId") else [])) if _int(i)]
+            if not ids:
+                raise ApiError("حداقل یه اینباند انتخاب کن.")
+            panel_call(e.panel().add_client, account, ids,
                        round(_float(b.get("totalGB")) * util.GB), util.now_ms() + days * util.DAY_MS if days else 0,
                        _int(b.get("limitIp"), 0, 0), " ".join(x for x in (name, phone) if x))
             if name or phone:

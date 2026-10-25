@@ -8,10 +8,18 @@ const FILTERS = [
   { v: 'ended', label: 'تموم شده', test: r => r.st.ended },
   { v: 'off', label: 'غیرفعال', test: r => r.st.off },
 ];
+const PAGE_SIZE = 200; // با صدها کانفیگ، صفحه سنگین نشه
 const inboundLabel = i => `${i.remark} · پورت ${fa(i.port)}`;
 const numOrNull = v => { const n = Number(toEn(v).trim()); return v.trim() === '' || isNaN(n) ? null : n; };
 const phoneOk = p => !p || /^09\d{9}$/.test(p);
 const cleanPhone = v => toEn(v).replace(/[\s-]/g, '');
+const idsOf = c => (c.inboundIds && c.inboundIds.length ? c.inboundIds : [c.inboundId]).filter(Boolean);
+const onAllInbounds = (c, inbounds) => inbounds.length > 1 && inbounds.every(i => idsOf(c).includes(i.id));
+function inboundNames(c, inbounds) {
+  if (onAllInbounds(c, inbounds)) return `همهٔ اینباندها (${fa(inbounds.length)})`;
+  const names = idsOf(c).map(id => inbounds.find(i => i.id === id)).filter(Boolean).map(i => i.remark);
+  return names.length ? names.join('، ') : 'بدون اینباند';
+}
 
 function clientRow({ c, st }) {
   const unlimited = st.left === Infinity;
@@ -42,8 +50,10 @@ function clientRow({ c, st }) {
 
 App.pages.clients = async view => {
   const [clients, rules, inbounds] = await Promise.all([api.clients(), api.rules(), api.inbounds()]);
+  const ctx = { clients, rules, inbounds };
   const rows = clients.map(c => ({ c, st: clientState(c, rules) }));
   const start = new URLSearchParams(location.hash.split('?')[1]).get('f') || 'all';
+  let limit = PAGE_SIZE;
 
   view.innerHTML = `<div class="stack">
     <div class="hstack wrap">
@@ -57,36 +67,52 @@ App.pages.clients = async view => {
     <div class="stack" id="list"></div>
   </div>`;
 
+  const groupHead = (title, sub) => `<div class="group-head">${icon('server', 'i-sm')}<b>${esc(title)}</b><span class="muted">${sub}</span></div>`;
   const draw = () => {
     const f = FILTERS.find(x => x.v === $('#filters').dataset.value);
     const q = toEn($('#q').value.trim()).toLowerCase();
     const inbId = Number($('#inb').value) || null;
     const shown = rows.filter(f.test)
-      .filter(({ c }) => !inbId || c.inboundId === inbId)
+      .filter(({ c }) => !inbId || idsOf(c).includes(inbId))
       .filter(({ c }) => !q || [c.account, c.name, c.phone].some(x => toEn(x).toLowerCase().includes(q)));
-    const groups = inbounds.map(i => ({ i, list: shown.filter(r => r.c.inboundId === i.id) })).filter(g => g.list.length);
+    const page = shown.slice(0, limit);
+
+    // گروه‌ها: کانفیگ‌هایی که رو همهٔ اینباندها هستن، بعد هر اینباند، بعد بدون اینباند
+    const groups = [];
+    const all = page.filter(r => onAllInbounds(r.c, inbounds));
+    if (all.length) groups.push({ head: groupHead('همهٔ اینباندها', `${fa(inbounds.length)} اینباند · ${fa(all.length)} کانفیگ`), list: all });
+    const rest = page.filter(r => !onAllInbounds(r.c, inbounds));
+    for (const i of inbounds) {
+      const list = rest.filter(r => idsOf(r.c)[0] === i.id);
+      if (list.length) groups.push({ head: groupHead(i.remark, `${esc(i.protocol.toUpperCase())} · پورت ${fa(i.port)} · ${fa(list.length)} کانفیگ`), list });
+    }
     const known = new Set(inbounds.map(i => i.id));
-    const orphans = shown.filter(r => !known.has(r.c.inboundId));
-    if (orphans.length) groups.push({ i: { remark: 'بدون اینباند' }, list: orphans });
+    const orphans = rest.filter(r => !known.has(idsOf(r.c)[0]));
+    if (orphans.length) groups.push({ head: groupHead('بدون اینباند', `${fa(orphans.length)} کانفیگ`), list: orphans });
+
     $('#list').innerHTML = groups.length ? groups.map(g => `
-      <div>
-        <div class="group-head">${icon('server', 'i-sm')}<b>${esc(g.i.remark)}</b><span class="muted">${g.i.port ? `${esc(g.i.protocol.toUpperCase())} · پورت ${fa(g.i.port)} · ` : ''}${fa(g.list.length)} کانفیگ</span></div>
+      <div>${g.head}
         <div class="clients-list">
           <div class="client-head"><span>کانفیگ</span><span>حجم</span><span>تاریخ</span><span>شماره</span><span>وضعیت</span><span></span></div>
           ${g.list.map(clientRow).join('')}
         </div>
-      </div>`).join('') : '<div class="empty card">کانفیگی با این مشخصات پیدا نشد.</div>';
+      </div>`).join('') + (shown.length > page.length
+        ? `<button class="btn btn-block" id="moreBtn">نمایش بیشتر (${fa(page.length)} از ${fa(shown.length)})</button>` : '')
+      : '<div class="empty card">کانفیگی با این مشخصات پیدا نشد.</div>';
+    const more = $('#moreBtn');
+    if (more) more.onclick = () => { limit += PAGE_SIZE; draw(); };
   };
+  const redraw = () => { limit = PAGE_SIZE; draw(); };
   draw();
-  $('#filters').addEventListener('change', draw);
-  $('#q').addEventListener('input', draw);
-  $('#inb').addEventListener('change', draw);
-  $('#addBtn').onclick = () => openAddConfig();
-  $('#syncBtn').onclick = e => busy(e.currentTarget, async () => { await wait(900); toast('اطلاعات از پنل به‌روز شد'); });
-  bindClientButtons(view, clients);
+  $('#filters').addEventListener('change', redraw);
+  $('#q').addEventListener('input', redraw);
+  $('#inb').addEventListener('change', redraw);
+  $('#addBtn').onclick = () => openAddConfig(ctx);
+  $('#syncBtn').onclick = e => busy(e.currentTarget, async () => { await App.go(); toast('اطلاعات از پنل به‌روز شد'); });
+  bindClientButtons(view, clients, ctx);
 };
 
-function bindClientButtons(view, clients) {
+function bindClientButtons(view, clients, ctx) {
   // روی محتوای همین صفحه (نه خود #view) تا با هر بار رفتن به صفحه، شنونده تکراری نشه
   view.firstElementChild.addEventListener('click', e => {
     const find = attr => {
@@ -95,17 +121,17 @@ function bindClientButtons(view, clients) {
     };
     const send = e.target.closest('[data-send]');
     if (send) return send.disabled || openSendOne(find('data-send'));
-    if (e.target.closest('[data-link]')) return openConfig(find('data-link'), 'link');
-    if (e.target.closest('[data-edit]')) return openConfig(find('data-edit'), 'info');
-    if (e.target.closest('[data-row]')) return openConfig(find('data-row'), 'info');
+    if (e.target.closest('[data-link]')) return openConfig(find('data-link'), 'link', ctx);
+    if (e.target.closest('[data-edit]')) return openConfig(find('data-edit'), 'info', ctx);
+    if (e.target.closest('[data-row]')) return openConfig(find('data-row'), 'info', ctx);
   });
 }
 
 // ───── پنجرهٔ هر کانفیگ: مشخصات / تمدید / لینک و QR ─────
-async function openConfig(c, tab = 'info') {
-  const [rules, inbounds] = await Promise.all([api.rules(), api.inbounds()]);
+async function openConfig(c, tab = 'info', ctx = null) {
+  // اطلاعات صفحه رو اگه داریم دوباره نمی‌گیریم تا پنجره همون لحظه باز بشه (و دوبار کلیک دوبار باز نکنه)
+  const { rules, inbounds } = ctx || { rules: await api.rules(), inbounds: await api.inbounds() };
   const st = clientState(c, rules);
-  const inb = inbounds.find(i => i.id === c.inboundId) || { remark: 'بدون اینباند', port: 0 };
   const tabs = ui.seg('cfgTab', [{ v: 'info', label: 'مشخصات' }, { v: 'renew', label: 'تمدید' }, { v: 'link', label: 'لینک و QR' }], tab).replace('class="seg"', 'class="seg full"');
   const hide = name => (name === tab ? '' : 'hidden');
 
@@ -120,7 +146,7 @@ async function openConfig(c, tab = 'info') {
         </div>
         <div class="field"><label for="cPhone">شمارهٔ موبایل</label><input class="input ltr" id="cPhone" inputmode="tel" value="${esc(c.phone)}" placeholder="09xxxxxxxxx"></div>
         <div class="form-row two">
-          <div class="field"><span class="label">اینباند</span><div class="input readonly">${esc(inboundLabel(inb))}</div></div>
+          <div class="field"><span class="label">اینباند</span><div class="input readonly">${esc(inboundNames(c, inbounds))}</div></div>
           <div class="field"><label for="cLimit">تعداد دستگاه</label><input class="input" id="cLimit" inputmode="numeric" value="${fa(c.limitIp)}"><span class="hint">۰ یعنی بدون محدودیت</span></div>
         </div>
         <div class="setting-row"><div class="txt"><b>کانفیگ فعال باشه</b><small>اگه خاموشش کنی، مشتری تا روشن کردن دوباره وصل نمی‌شه.</small></div>${ui.switch('cEnabled', c.enabled)}</div>
@@ -164,12 +190,12 @@ async function openConfig(c, tab = 'info') {
         box.textContent = 'این کانفیگ لینک قابل اشتراک نداره (یا ساب تو پنل خاموشه).';
         return;
       }
-      const first = L.config ? 'config' : 'sub';
+      const first = L.sub ? 'sub' : 'config';
       box.outerHTML = `
-        ${L.config && L.sub ? ui.seg('qrFor', [{ v: 'config', label: 'QR لینک کانفیگ' }, { v: 'sub', label: 'QR لینک ساب' }], first).replace('class="seg"', 'class="seg full"') : ''}
+        ${L.config && L.sub ? ui.seg('qrFor', [{ v: 'sub', label: 'QR لینک ساب' }, { v: 'config', label: 'QR لینک کانفیگ' }], first).replace('class="seg"', 'class="seg full"') : ''}
         <div class="qr-box" id="qrBox">${L.qr(first === 'config' ? L.config : L.sub)}</div>
-        ${L.all.map((x, i) => copyField('لینک کانفیگ' + (L.all.length > 1 ? ' ' + fa(i + 1) : ''), x)).join('')}
         ${L.sub ? copyField('لینک ساب (Subscription)', L.sub) : '<p class="hint small muted">ساب تو پنل خاموشه؛ فقط لینک کانفیگ هست.</p>'}
+        ${L.all.map((x, i) => copyField('لینک کانفیگ' + (L.all.length > 1 ? ' ' + fa(i + 1) : ''), x)).join('')}
         <p class="hint small muted">لینک رو تو تلگرام یا واتس‌اپ برای مشتری بفرست؛ با پیامک نفرست.</p>`;
       $('.seg[data-name="qrFor"]', m)?.addEventListener('change', e => {
         $('#qrBox', m).innerHTML = L.qr(e.currentTarget.dataset.value === 'sub' ? L.sub : L.config);
@@ -222,19 +248,30 @@ async function openConfig(c, tab = 'info') {
 }
 
 // ───── ساخت کانفیگ جدید ─────
-async function openAddConfig() {
-  const [inbounds, clients] = await Promise.all([api.inbounds(), api.clients()]);
-  // اسم پیشنهادی: ادامهٔ شماره‌گذاری خود علی (مثلاً VPN12 → VPN13)
+function savedInbounds(inbounds) {
+  try {
+    const ids = JSON.parse(localStorage.getItem('smsbot-inbounds') || 'null');
+    if (Array.isArray(ids) && ids.some(id => inbounds.find(i => i.id === id))) return ids;
+  } catch { /* اولین بار: همه */ }
+  return inbounds.map(i => i.id);
+}
+
+function openAddConfig({ clients, inbounds }) {
+  // اسم پیشنهادی: ادامهٔ شماره‌گذاری خود علی (مثلاً storvpn5 → storvpn6)
   let best = { n: 0, prefix: 'VPN' };
   for (const c of clients) {
     const mm = c.account.match(/^([A-Za-z]+[-_]?)(\d+)$/);
     if (mm && Number(mm[2]) > best.n) best = { n: Number(mm[2]), prefix: mm[1] };
   }
+  const chosen = savedInbounds(inbounds);
 
   const m = openModal(`${modalHead('کانفیگ جدید')}
     <form class="stack" id="addForm">
-      <div class="field"><label for="aInb">اینباند</label>
-        <select class="select" id="aInb">${inbounds.map(i => `<option value="${i.id}">${esc(inboundLabel(i))}</option>`).join('')}</select></div>
+      <div class="field"><span class="label">اینباندها</span>
+        <div class="inb-list">
+          <label class="check strong"><input type="checkbox" id="aInbAll">همهٔ اینباندها <span class="muted small">(یه لینک ساب برای همه)</span></label>
+          <div class="inb-items">${inbounds.map(i => `<label class="check"><input type="checkbox" name="aInb" value="${i.id}" ${chosen.includes(i.id) ? 'checked' : ''}>${esc(inboundLabel(i))}</label>`).join('')}</div>
+        </div></div>
       <div class="form-row two">
         <div class="field"><label for="aAcc">اسم کانفیگ</label><input class="input" id="aAcc" value="${esc(best.prefix + (best.n + 1))}" spellcheck="false">
           <span class="hint">بدون فاصله؛ / و \\ هم مجاز نیست.</span></div>
@@ -253,16 +290,29 @@ async function openAddConfig() {
       <div class="modal-foot" style="margin-top:0"><button class="btn btn-primary" type="submit">${icon('plus')}ساختن کانفیگ</button><button class="btn" type="button" data-action="close">انصراف</button></div>
     </form>`);
 
+  const boxes = $$('[name="aInb"]', m);
+  const all = $('#aInbAll', m);
+  const syncAll = () => {
+    const n = boxes.filter(b => b.checked).length;
+    all.checked = n === boxes.length;
+    all.indeterminate = n > 0 && n < boxes.length;
+  };
+  syncAll();
+  all.onchange = () => { boxes.forEach(b => { b.checked = all.checked; }); };
+  boxes.forEach(b => { b.onchange = syncAll; });
+
   $('#addForm', m).onsubmit = async e => {
     e.preventDefault();
     const err = $('#aErr', m);
     const account = $('#aAcc', m).value.trim(), phone = cleanPhone($('#aPhone', m).value);
+    const inboundIds = boxes.filter(b => b.checked).map(b => Number(b.value));
+    if (!inboundIds.length) return (err.textContent = 'حداقل یه اینباند انتخاب کن.');
     if (!account) return (err.textContent = 'اسم کانفیگ رو بنویس.');
     if (!phoneOk(phone)) return (err.textContent = 'شماره باید ۱۱ رقم باشه و با ۰۹ شروع بشه.');
+    try { localStorage.setItem('smsbot-inbounds', JSON.stringify(inboundIds)); } catch { /* اختیاری */ }
     try {
       const created = await busy(e.submitter, () => api.addClient({
-        account, phone, name: $('#aName', m).value.trim(),
-        inboundId: Number($('#aInb', m).value),
+        account, phone, name: $('#aName', m).value.trim(), inboundIds,
         totalGB: numOrNull($('#aVol', m).value) || 0,
         daysLeft: numOrNull($('#aDays', m).value),
         limitIp: numOrNull($('#aLimit', m).value) || 0,

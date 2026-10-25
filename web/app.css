@@ -511,6 +511,9 @@ button { cursor: pointer; }
 .err { color: var(--danger); min-height: 0; }
 .err:empty { display: none; }
 .check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+.check.strong { font-weight: 500; }
+.inb-list { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.inb-items { display: grid; gap: 6px; padding-inline-start: 26px; }
 .check input { width: 18px; height: 18px; margin: 0; accent-color: var(--primary); }
 details.more summary { cursor: pointer; color: var(--primary); font-size: 13.5px; width: fit-content; }
 .qr-box { width: 200px; margin: 0 auto; padding: 8px; border-radius: 14px; background: #fff; border: 1px solid var(--border); }

@@ -177,10 +177,11 @@ class Panel:
         return "%s://%s:%s%s%s" % (scheme, host, s.get("subPort") or 2096, path, sub_id)
 
     # ───── ساخت و ویرایش کلاینت ─────
-    def add_client(self, email, inbound_id, total_bytes, expiry_ms, limit_ip, comment=""):
+    def add_client(self, email, inbound_ids, total_bytes, expiry_ms, limit_ip, comment=""):
+        """یه کلاینت، وصل به یک یا چند اینباند (مثلاً همهٔ اینباندها/نودها با یک لینک ساب)."""
         client = {"email": email, "totalGB": int(total_bytes), "expiryTime": int(expiry_ms), "limitIp": int(limit_ip),
                   "enable": True, "tgId": 0, "comment": comment, "subId": secrets.token_hex(8)}
-        self.call("POST", "/panel/api/clients/add", {"client": client, "inboundIds": [int(inbound_id)]})
+        self.call("POST", "/panel/api/clients/add", {"client": client, "inboundIds": [int(i) for i in inbound_ids]})
 
     def update_client(self, current_email, **changes):
         """update در پنل کل ردیف رو جایگزین می‌کنه، پس اول ردیف کامل رو می‌گیریم و فقط تغییرات رو روش می‌ذاریم.
