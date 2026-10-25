@@ -21,6 +21,8 @@ DEFAULT_SETTINGS = {
         "ended": {"on": False, "templateId": 3, "line": 1},
     },
     "app": {"address": "", "port": 8090, "cert": "", "key": ""},
+    # پشتیبان خودکار به ربات تلگرام علی (هر روز سر ساعت، به وقت تهران)
+    "backup": {"telegram": False, "token": "", "chatId": "", "time": "03:00", "lastSent": 0, "lastError": ""},
     "auth": {"salt": "", "hash": ""},
 }
 

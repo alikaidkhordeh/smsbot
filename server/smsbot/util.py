@@ -1,6 +1,7 @@
 """ابزارهای مشترک: زمان تهران، شماره موبایل، اعداد فارسی، پر کردن متن پیامک."""
 import json
 import math
+import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -12,6 +13,15 @@ DAY_MS = 86_400_000
 
 # کلادفلر درخواست‌های پایتون بدون شناسه رو رد می‌کنه (خطای 1010)
 USER_AGENT = "smsbot (+https://github.com/alikaidkhordeh/smsbot)"
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def app_version():
+    try:
+        with open(os.path.join(ROOT, "VERSION"), encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return "dev"
 
 FA_DIGITS = "۰۱۲۳۴۵۶۷۸۹"
 _TO_EN = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "0123456789" * 2)

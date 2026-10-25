@@ -21,6 +21,28 @@ async function req(method, path, body) {
 const get = path => req('GET', path);
 const post = (path, body = {}) => req('POST', path, body);
 
+async function failFrom(r) {
+  if (r.status === 401) {
+    App.onUnauthorized();
+    return Object.assign(new Error('اول وارد شو'), { toasted: true });
+  }
+  let j = {};
+  try { j = await r.json(); } catch {}
+  return new Error(j.error || `خطای ارتباط با سرور (کد ${r.status})`);
+}
+
+// دانلود فایل (پشتیبان، اکسل) با اسمی که سرور می‌ده
+async function download(path, fallbackName) {
+  const r = await fetch(path, { credentials: 'same-origin' });
+  if (!r.ok) throw await failFrom(r);
+  const m = (r.headers.get('Content-Disposition') || '').match(/filename\*=UTF-8''([^;]+)/);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(await r.blob());
+  a.download = m ? decodeURIComponent(m[1]) : fallbackName;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
 // QR از روی خود لینک (لینک‌ها ممکنه حروف فارسی داشته باشن → اول به UTF-8)
 function makeQr(text) {
   const q = qrcode(0, 'L');
@@ -70,6 +92,19 @@ const api = {
   messageState: id => get('/api/messages/state?id=' + id),
   backup: () => get('/api/backup'),
   restore: data => post('/api/restore', data),
+  downloadBackup: () => download('/api/backup/full', 'smsbot-backup.db'),
+  exportContacts: () => download('/api/export/contacts', 'smsbot-numbers.xlsx'),
+  async restoreDb(file) {
+    const r = await fetch('/api/restore/db', {
+      method: 'POST', credentials: 'same-origin', body: file,
+      headers: { 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/octet-stream' },
+    });
+    if (!r.ok) throw await failFrom(r);
+    return true;
+  },
+  telegramDetect: token => post('/api/telegram/detect', { token }),
+  telegramTest: (token, chatId) => post('/api/telegram/test', { token, chatId }),
+  telegramSend: () => post('/api/telegram/send'),
   update: () => post('/api/update'),
   logs: () => get('/api/logs'),
 };

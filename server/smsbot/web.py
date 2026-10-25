@@ -16,9 +16,10 @@ import urllib.parse
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import util
+from . import backup, util
 from .gateway import GatewayError
 from .panel import Panel, PanelError, normalize, resolve_url
+from .telegram import Telegram, TelegramError
 
 log = logging.getLogger("smsbot")
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -57,6 +58,17 @@ class ApiError(Exception):
         self.status = status
 
 
+class FileResult:
+    """جواب API به‌صورت فایل دانلودی (پشتیبان، اکسل)."""
+
+    def __init__(self, data, filename, ctype="application/octet-stream"):
+        self.data, self.filename, self.ctype = data, filename, ctype
+
+
+RAW_ROUTES = {"/api/restore/db"}  # بدنهٔ خام (فایل)، نه JSON
+MAX_RAW = 200 * 1024 * 1024
+
+
 def hash_password(password, salt):
     return hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), 200_000).hex()
 
@@ -77,11 +89,7 @@ def schedule_restart(delay=1.5):
 
 
 def version():
-    try:
-        with open(os.path.join(ROOT, "VERSION"), encoding="utf-8") as f:
-            return f.read().strip()
-    except OSError:
-        return "dev"
+    return util.app_version()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -124,6 +132,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(404, {"ok": False, "error": "پیدا نشد"})
         with open(full, "rb") as f:
             data = f.read()
+        if full.endswith("index.html"):
+            # نسخه پشت آدرس فایل‌ها: بعد از آپدیت، مرورگر (و کلادفلر) فایل‌های قدیمی رو نشون نده
+            v = ("?v=" + version()).encode()
+            data = data.replace(b'.js"></script>', b'.js' + v + b'"></script>').replace(b'href="app.css"', b'href="app.css' + v + b'"')
         ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype.endswith(("javascript", "json")):
             ctype += "; charset=utf-8"
@@ -175,7 +187,13 @@ class Handler(BaseHTTPRequestHandler):
         if not public and not self._authed():
             return self._json(401, {"ok": False, "error": "اول وارد شو"})
         body = {}
-        if method == "POST":
+        self.raw_body = b""
+        if method == "POST" and url.path in RAW_ROUTES:
+            n = int(self.headers.get("Content-Length") or 0)
+            if n > MAX_RAW:
+                return self._json(413, {"ok": False, "error": "فایل خیلی بزرگه"})
+            self.raw_body = self.rfile.read(n) if n else b""
+        elif method == "POST":
             n = int(self.headers.get("Content-Length") or 0)
             if n > MAX_BODY:
                 return self._json(413, {"ok": False, "error": "حجم درخواست زیاده"})
@@ -186,12 +204,19 @@ class Handler(BaseHTTPRequestHandler):
         query = {k: v[0] for k, v in urllib.parse.parse_qs(url.query).items()}
         try:
             result = fn(self, body, query)
+            if isinstance(result, FileResult):
+                name = urllib.parse.quote(result.filename)
+                self._headers(200, result.ctype, len(result.data), {
+                    "Cache-Control": "no-store",
+                    "Content-Disposition": "attachment; filename=\"%s\"; filename*=UTF-8''%s" % (name, name)})
+                self.wfile.write(result.data)
+                return
             if isinstance(result, tuple):  # (داده، هدرهای اضافه)
                 return self._json(200, {"ok": True, "data": result[0]}, result[1])
             return self._json(200, {"ok": True, "data": result})
         except ApiError as e:
             return self._json(e.status, {"ok": False, "error": str(e)})
-        except (PanelError, GatewayError) as e:
+        except (PanelError, GatewayError, TelegramError) as e:
             # نه ۵۰۲: کلادفلر جواب ۵۰۲/۵۰۴ رو با صفحهٔ خطای خودش عوض می‌کنه و پیام اصلی گم می‌شه
             log.warning("%s %s: %s", method, url.path, e)
             return self._json(422, {"ok": False, "error": str(e)})
@@ -237,7 +262,7 @@ def serve(app, host, port, cert="", key=""):
     log.info("listening on %s:%s (http%s)", host, port, " + https" if httpd.ssl_ctx else "")
     httpd.serve_forever()
 
-SECRET_FIELDS = {"panel": ("token", "password"), "phone": ("password",)}
+SECRET_FIELDS = {"panel": ("token", "password"), "phone": ("password",), "backup": ("token",)}
 STATUS_VIEW = {"queued": "queued", "sending": "queued", "sent": "sent", "delivered": "sent",
                "failed": "failed", "cancelled": "failed"}
 
@@ -588,11 +613,12 @@ class App:
         @route("GET", "/api/settings")
         def settings_get(h, b, q):
             s = d.settings()
-            out = {k: dict(s[k]) for k in ("panel", "phone", "sending", "app")}
+            out = {k: dict(s[k]) for k in ("panel", "phone", "sending", "app", "backup")}
             for sec, fields in SECRET_FIELDS.items():
                 for f in fields:
                     out[sec]["has_" + f] = bool(out[sec].get(f))
                     out[sec][f] = ""
+            out["backup"]["lastSentText"] = util.fmt_time(out["backup"].get("lastSent") or 0)
             out["version"] = version()
             return out
 
@@ -613,6 +639,10 @@ class App:
             phone = merged_section("phone", b.get("phone"))
             sending = merged_section("sending", b.get("sending"))
             app = merged_section("app", b.get("app"))
+            bk = merged_section("backup", {k: v for k, v in (b.get("backup") or {}).items() if k in ("telegram", "token", "chatId", "time")})
+            bk["telegram"] = bool(bk.get("telegram"))
+            bk["chatId"] = str(bk.get("chatId") or "").strip()
+            bk["time"] = "%02d:%02d" % divmod(util.parse_hhmm(bk.get("time"), 3 * 60), 60)
             sending["gapSec"] = _int(sending.get("gapSec"), 20, 1, 3600)
             sending["dailyLimit"] = _int(sending.get("dailyLimit"), 50, 1, 5000)
             app["port"] = _int(app.get("port"), 8090, 1, 65535)
@@ -624,7 +654,7 @@ class App:
                 panel["url"] = resolve_url(panel["url"], panel.get("linkHost") or "")
                 if panel.get("linkHost") == old["panel"].get("linkHost"):
                     panel["linkHost"] = ""  # آدرس پنل عوض شد → آدرس لینک‌ها دوباره خودکار پیدا بشه
-            for k, v in (("panel", panel), ("phone", phone), ("sending", sending), ("app", app)):
+            for k, v in (("panel", panel), ("phone", phone), ("sending", sending), ("app", app), ("backup", bk)):
                 d.save_section(k, v)
             restart = any(old["app"].get(k) != app.get(k) for k in ("port", "cert", "key"))
             if restart:
@@ -691,9 +721,60 @@ class App:
         def logs(h, b, q):
             return list(MEMORY_LOG.lines)[-200:]
 
+        # ───── پشتیبان کامل، اکسل و تلگرام ─────
+        @route("GET", "/api/backup/full")
+        def backup_full(h, b, q):
+            return FileResult(backup.db_bytes(d), "smsbot-backup-%s.db" % backup.stamp())
+
+        @route("GET", "/api/export/contacts")
+        def export_contacts(h, b, q):
+            return FileResult(backup.xlsx(backup.contact_rows(d, e)), "smsbot-numbers-%s.xlsx" % backup.stamp(), backup.XLSX_MIME)
+
+        @route("POST", "/api/restore/db")
+        def restore_full(h, b, q):
+            try:
+                backup.restore_db(d, h.raw_body)
+            except ValueError as err:
+                raise ApiError(str(err))
+            e._panel_key = None  # اتصال پنل از نو با تنظیمات برگشته
+            e.last_device = 0
+            e.check_soon()
+            log.info("full backup restored")
+            return True
+
+        def tg_cfg(src):
+            cur = d.settings()["backup"]
+            token = (src.get("token") or "").strip() or cur.get("token")
+            chat = str(src.get("chatId") or "").strip() or cur.get("chatId")
+            return Telegram(token), chat
+
+        @route("POST", "/api/telegram/detect")
+        def telegram_detect(h, b, q):
+            tg, _ = tg_cfg(b)
+            chats = tg.detect_chats()
+            if not chats:
+                raise ApiError("پیامی به ربات نرسیده؛ اول تو تلگرام ربات رو باز کن و «/start» بفرست، بعد دوباره بزن.")
+            return chats
+
+        @route("POST", "/api/telegram/test")
+        def telegram_test(h, b, q):
+            tg, chat = tg_cfg(b)
+            if not chat:
+                raise ApiError("شناسهٔ چت رو وارد کن (یا «پیدا کردن خودکار» رو بزن).")
+            tg.send_message(chat, "ربات پشتیبان «پنل پیامک» وصله. فایل‌های پشتیبان هر روز اینجا فرستاده می‌شن.")
+            return True
+
+        @route("POST", "/api/telegram/send")
+        def telegram_send(h, b, q):
+            bk = d.settings()["backup"]
+            if not (bk.get("token") and bk.get("chatId")):
+                raise ApiError("اول توکن ربات و شناسهٔ چت رو ذخیره کن.")
+            e.send_backup()
+            return {"sentAt": util.fmt_time(util.now_ms())}
+
         # ───── پشتیبان و آپدیت ─────
         @route("GET", "/api/backup")
-        def backup(h, b, q):
+        def backup_json(h, b, q):
             s = d.settings()
             data = {"app": "smsbot", "version": version(), "exportedAt": util.now_ms(),
                     "contacts": list(d.contacts().values()),

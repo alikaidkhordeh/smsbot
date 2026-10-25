@@ -4,9 +4,10 @@ import logging
 import threading
 import time
 
-from . import util
+from . import backup, util
 from .gateway import Gateway, GatewayError
 from .panel import Panel, PanelError, normalize
+from .telegram import Telegram, TelegramError
 
 log = logging.getLogger("smsbot")
 RULES = ("ended", "volume", "expiry")
@@ -19,7 +20,7 @@ class Engine:
         self.panel_status = {"ok": None, "checkedAt": 0, "error": "", "version": ""}
         self.phone_status = {"ok": None, "checkedAt": 0, "error": "", "device": "", "lastSeenAgo": None}
         self._panel, self._panel_key = None, None
-        self.last_check = self.last_send = self.last_poll = self.last_device = 0.0
+        self.last_check = self.last_send = self.last_poll = self.last_device = self.last_backup_try = 0.0
 
     # ───── اتصال‌ها (با هر تغییر تنظیمات از نو ساخته می‌شن) ─────
     def panel(self, cfg=None):
@@ -68,6 +69,7 @@ class Engine:
         if now - self.last_poll >= 60:
             self.last_poll = now
             self.poll_states(s)
+        self.maybe_backup(s)
         # اگه فاصلهٔ پیامک‌ها کمتر از ۱۰ ثانیه‌ست، زودتر سر بزن
         return max(1, min(10, int(s["sending"].get("gapSec") or 20)))
 
@@ -202,6 +204,48 @@ class Engine:
         ago = d["lastSeenAgo"]
         self.phone_status.update(ok=ago is not None and ago <= 60, device=d["name"], lastSeenAgo=ago, checkedAt=time.time(),
                                  error="" if ago is not None and ago <= 60 else "گوشی مدتیه به اینترنت وصل نشده.")
+
+    # ───── پشتیبان خودکار به تلگرام ─────
+    def maybe_backup(self, s):
+        b = s.get("backup") or {}
+        if not (b.get("telegram") and b.get("token") and b.get("chatId")):
+            return
+        now = util.tehran_now()
+        at = util.parse_hhmm(b.get("time"), 3 * 60)
+        target = now.replace(hour=at // 60, minute=at % 60, second=0, microsecond=0)
+        if now < target or (b.get("lastSent") or 0) >= int(target.timestamp() * 1000):
+            return  # هنوز ساعتش نشده، یا امروز فرستاده شده
+        if time.time() - self.last_backup_try < 3600:
+            return  # بعد از خطا، ساعتی یه بار دوباره
+        self.last_backup_try = time.time()
+        try:
+            self.send_backup()
+        except (TelegramError, OSError):
+            pass  # خطا تو تنظیمات ذخیره شده و تو صفحه نشون داده می‌شه
+
+    def send_backup(self):
+        """فایل پشتیبان کامل + اکسل شماره‌ها به ربات تلگرام."""
+        b = self.db.settings()["backup"]
+        tg, chat = Telegram(b.get("token")), b.get("chatId")
+        try:
+            rows = backup.contact_rows(self.db, self)
+            st = backup.stamp()
+            caption = ("پشتیبان پنل پیامک · %s\n%s شماره · نسخهٔ %s\nبرای بازگردانی: تنظیمات ← «بازگردانی از پشتیبان» ← همین فایل .db"
+                       % (util.fmt_time(util.now_ms()), util.to_fa(len(rows) - 1), util.app_version()))
+            tg.send_document(chat, "smsbot-backup-%s.db" % st, backup.db_bytes(self.db), caption)
+            tg.send_document(chat, "smsbot-numbers-%s.xlsx" % st, backup.xlsx(rows), "شماره‌های مشتری‌ها (اکسل)")
+            self._save_backup_meta(lastSent=util.now_ms(), lastError="")
+            log.info("backup sent to telegram")
+        except TelegramError as e:
+            self._save_backup_meta(lastError=str(e))
+            log.warning("backup: %s", e)
+            raise
+
+    def _save_backup_meta(self, **meta):
+        # دوباره می‌خونیم که تنظیماتی که همین الان ذخیره شده پاک نشه
+        cur = self.db.settings()["backup"]
+        cur.update(meta)
+        self.db.save_section("backup", cur)
 
     def status_view(self):
         s = self.db.settings()

@@ -45,6 +45,7 @@ App.pages.history = async view => {
 App.pages.settings = async view => {
   const s = await api.settings();
   const p = s.panel, ph = s.phone, snd = s.sending, app = s.app;
+  const bk = s.backup || { telegram: false, chatId: '', time: '03:00' };
   const savedPh = (has, text = '•••••••• (ذخیره شده)') => (has ? text : '');
   // هنوز وصل نشده → اول فرم نام کاربری و رمز (راحت‌ترین راه)
   const authTab = p.has_token ? 'token' : 'login';
@@ -154,13 +155,48 @@ App.pages.settings = async view => {
     </div>
 
     <div class="card">
-      <div class="card-head"><span class="ico">${icon('download')}</span><div><h2>پشتیبان و آپدیت</h2><p>شماره‌ها فقط تو این برنامه‌ان؛ هر از گاهی پشتیبان بگیر</p></div></div>
+      <div class="card-head"><span class="ico">${icon('download')}</span><div><h2>پشتیبان</h2><p>شماره‌ها و همهٔ تنظیمات فقط روی همین سرورن؛ پشتیبان داشته باش</p></div></div>
+      <div class="stack">
+        <div class="hstack wrap">
+          <button class="btn" id="bkDown">${icon('download')}دانلود پشتیبان کامل</button>
+          <button class="btn" id="bkUp">${icon('refresh')}بازگردانی از پشتیبان</button>
+          <button class="btn" id="xlsDown">${icon('text')}خروجی اکسل شماره‌ها</button>
+          <input type="file" id="bkFile" accept=".db,.json,application/octet-stream,application/json" hidden>
+        </div>
+        <p class="hint small muted">پشتیبان کامل همه‌چیز رو داره: اتصال پنل و گوشی، شماره‌ها، متن‌ها و تنظیمات. اگه سرور عوض شد: برنامه رو روی سرور جدید نصب کن، وارد شو و همین فایل رو «بازگردانی» کن؛ بعدش با رمز قبلی وارد می‌شی. اکسل شماره‌ها حتی وقتی پنل در دسترس نیست هم خروجی می‌ده.</p>
+
+        <div class="divider" style="margin:4px 0"></div>
+        <div class="setting-row"><div class="txt"><b>ارسال خودکار پشتیبان به تلگرام</b><small>هر روز سر ساعت، فایل پشتیبان کامل و اکسل شماره‌ها به ربات تلگرامت فرستاده می‌شه.</small></div>${ui.switch('tgOn', bk.telegram)}</div>
+        <div class="stack" id="tgBox" ${bk.telegram ? '' : 'hidden'}>
+          <div class="sms-preview small" style="border-style:solid">
+            <b>ساخت ربات (یک‌باره):</b> تو تلگرام به <b>@BotFather</b> پیام بده ← <span class="ltr">/newbot</span> ← یه اسم بده ← توکنی که می‌ده رو اینجا بذار. بعد ربات جدیدت رو باز کن و <span class="ltr">/start</span> بفرست و «پیدا کردن خودکار» رو بزن. بهتره یه ربات جدید فقط برای پشتیبان بسازی، نه رباتی که برنامهٔ دیگه‌ای باهاش کار می‌کنه.
+          </div>
+          <div class="form-row two">
+            <div class="field"><label for="tgToken">توکن ربات</label><input class="input ltr" id="tgToken" type="password" placeholder="${savedPh(bk.has_token)}" autocomplete="off"></div>
+            <div class="field"><label for="tgChat">شناسهٔ چت</label>
+              <div class="hstack"><input class="input ltr" id="tgChat" value="${esc(bk.chatId)}" inputmode="numeric" placeholder="123456789" style="flex:1">
+                <button class="btn btn-sm" id="tgDetect" type="button">پیدا کردن خودکار</button></div></div>
+          </div>
+          <div class="form-row two">
+            <div class="field"><label for="tgTime">ساعت ارسال (هر روز، به وقت تهران)</label><input class="input" id="tgTime" type="time" value="${esc(bk.time)}" style="width:140px"></div>
+            <div class="field"><span class="label">آخرین ارسال</span>
+              <div class="small">${bk.lastSent ? esc(bk.lastSentText) : '<span class="muted">هنوز فرستاده نشده</span>'}${bk.lastError ? `<div style="color:var(--danger)">${esc(bk.lastError)}</div>` : ''}</div></div>
+          </div>
+          <div class="hstack wrap">
+            <button class="btn btn-primary" id="tgSave" type="button">${icon('check')}ذخیره</button>
+            <button class="btn" id="tgTest" type="button">${icon('send')}پیام آزمایشی</button>
+            <button class="btn" id="tgSend" type="button">${icon('download')}ارسال پشتیبان الان</button>
+          </div>
+          <div id="tgResult"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><span class="ico">${icon('refresh')}</span><div><h2>آپدیت</h2></div></div>
       <div class="hstack wrap">
-        <button class="btn" id="bkDown">${icon('download')}دانلود پشتیبان</button>
-        <button class="btn" id="bkUp">${icon('refresh')}بازگردانی از پشتیبان</button>
-        <input type="file" id="bkFile" accept="application/json,.json" hidden>
-        <span class="spacer"></span>
         <span class="small muted">نسخهٔ برنامه: <span class="ltr">${esc(s.version)}</span></span>
+        <span class="spacer"></span>
         <button class="btn btn-sm" id="updBtn">${icon('download', 'i-sm')}بررسی و نصب آپدیت</button>
       </div>
     </div>
@@ -296,23 +332,54 @@ App.pages.settings = async view => {
     toast('رمز عوض شد');
   };
 
-  $('#bkDown').onclick = async e => {
-    const data = await busy(e.currentTarget, () => api.backup());
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-    a.download = `smsbot-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  };
+  $('#bkDown').onclick = e => busy(e.currentTarget, () => api.downloadBackup());
+  $('#xlsDown').onclick = e => busy(e.currentTarget, () => api.exportContacts());
   $('#bkUp').onclick = () => $('#bkFile').click();
   $('#bkFile').onchange = async e => {
     const file = e.target.files[0];
+    e.target.value = '';
     if (!file) return;
-    let data;
-    try { data = JSON.parse(await file.text()); } catch { return toast('فایل پشتیبان خراب یا نامعتبره', 'alert'); }
-    if (!await confirmBox({ title: 'بازگردانی از پشتیبان', text: 'شماره‌ها، متن‌ها و قوانین هشدار از فایل برمی‌گردن. ادامه بدم؟' })) return;
-    const r = await busy(null, () => api.restore(data));
-    toast(`${fa(r.contacts)} شماره برگشت`);
+    if (file.name.toLowerCase().endsWith('.json')) {  // پشتیبان قدیمی (فقط شماره‌ها و متن‌ها)
+      let data;
+      try { data = JSON.parse(await file.text()); } catch { return toast('فایل پشتیبان خراب یا نامعتبره', 'alert'); }
+      if (!await confirmBox({ title: 'بازگردانی از پشتیبان', text: 'شماره‌ها، متن‌ها و قوانین هشدار از فایل برمی‌گردن. ادامه بدم؟' })) return;
+      const r = await busy(null, () => api.restore(data));
+      return toast(`${fa(r.contacts)} شماره برگشت`);
+    }
+    if (!await confirmBox({ title: 'بازگردانی پشتیبان کامل', text: 'همهٔ اطلاعات فعلی برنامه (اتصال پنل و گوشی، شماره‌ها، متن‌ها، تنظیمات و رمز ورود) با محتوای این فایل عوض می‌شه. ادامه بدم؟', ok: 'بازگردانی کن', danger: true })) return;
+    await busy(null, () => api.restoreDb(file));
+    toast('بازگردانی شد؛ اگه رمز فایل پشتیبان فرق داشت، با همون وارد شو');
+    setTimeout(() => location.reload(), 2000);
+  };
+
+  // پشتیبان خودکار تلگرام
+  $('[name="tgOn"]').addEventListener('change', e => { $('#tgBox').hidden = !e.target.checked; });
+  const tgBox = (ok, html) => showBox($('#tgResult'), ok, html);
+  const tgForm = () => ({ telegram: $('[name="tgOn"]').checked, token: $('#tgToken').value.trim(), chatId: toEn($('#tgChat').value).trim(), time: $('#tgTime').value });
+  const saveTg = () => api.saveSettings({ backup: tgForm() });
+  $('[name="tgOn"]').addEventListener('change', () => saveTg().then(() => toast($('[name="tgOn"]').checked ? 'پشتیبان خودکار روشن شد' : 'پشتیبان خودکار خاموش شد')));
+  $('#tgSave').onclick = async e => {
+    await busy(e.currentTarget, saveTg);
+    toast('تنظیمات پشتیبان ذخیره شد');
+  };
+  $('#tgDetect').onclick = async e => {
+    try {
+      const chats = await busy(e.currentTarget, () => api.telegramDetect($('#tgToken').value.trim()));
+      $('#tgChat').value = chats[chats.length - 1].id;
+      tgBox(true, `پیدا شد: ${esc(chats[chats.length - 1].name)} (<span class="ltr">${esc(chats[chats.length - 1].id)}</span>)؛ ذخیره رو بزن`);
+    } catch (err) { tgBox(false, esc(err.message)); }
+  };
+  $('#tgTest').onclick = async e => {
+    try {
+      await busy(e.currentTarget, () => api.telegramTest($('#tgToken').value.trim(), toEn($('#tgChat').value).trim()));
+      tgBox(true, 'پیام آزمایشی تو تلگرام فرستاده شد');
+    } catch (err) { tgBox(false, esc(err.message)); }
+  };
+  $('#tgSend').onclick = async e => {
+    try {
+      await busy(e.currentTarget, async () => { await saveTg(); return api.telegramSend(); });
+      tgBox(true, 'فایل پشتیبان و اکسل شماره‌ها به تلگرام فرستاده شد');
+    } catch (err) { tgBox(false, esc(err.message)); }
   };
 
   $('#updBtn').onclick = async e => {

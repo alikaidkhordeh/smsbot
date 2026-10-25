@@ -65,6 +65,7 @@ const MOCK = {
     phone: { mode: 'cloud', url: 'https://api.sms-gate.app/3rdparty/v1', username: 'K7QX2M', password: '', has_password: true, line1: 'همراه اول', line2: 'ایرانسل', defaultLine: 1 },
     sending: { from: '09:00', to: '22:00', gapSec: 20, dailyLimit: 50 },
     app: { address: 'sms.example.com', port: 8090, cert: '', key: '' },
+    backup: { telegram: true, token: '', has_token: true, chatId: '123456789', time: '03:00', lastSent: 1, lastSentText: 'امروز ۰۳:۰۰', lastError: '' },
     version: '0.2.0',
   },
 };
@@ -161,6 +162,12 @@ const api = {
   async messageState() { await wait(800); return { status: 'delivered', raw: 'Delivered', error: '' }; },
   async backup() { await wait(); return { app: 'smsbot', contacts: MOCK.clients.filter(c => c.phone).map(c => ({ email: c.email, name: c.name, phone: c.phone })) }; },
   async restore(data) { await wait(); return { contacts: (data.contacts || []).length }; },
+  async downloadBackup() { await wait(400); toast('در نسخهٔ واقعی فایل پشتیبان دانلود می‌شه'); },
+  async exportContacts() { await wait(400); toast('در نسخهٔ واقعی فایل اکسل دانلود می‌شه'); },
+  async restoreDb() { await wait(800); return true; },
+  async telegramDetect() { await wait(900); return [{ id: '123456789', name: 'Ali' }]; },
+  async telegramTest() { await wait(900); return true; },
+  async telegramSend() { await wait(1500); return { sentAt: 'امروز ۰۳:۰۰' }; },
   async update() { await wait(1500); return { updated: false, version: '0.2.0' }; },
   async logs() { await wait(); return ['10-25 09:00:01 INFO alert queued: volume VPN7', '10-25 09:00:21 INFO listening']; },
 };
