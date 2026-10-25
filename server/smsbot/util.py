@@ -51,6 +51,55 @@ def clean_phone(s):
     return "0" + m.group(1) if m else ""
 
 
+def phone_for(contacts, email, comment):
+    """شمارهٔ ثبت‌شده تو برنامه. فقط اگه این کانفیگ اصلاً تو برنامه ثبت نشده، شمارهٔ داخل Comment پنل.
+    اگه علی شماره رو تو برنامه پاک کرده باشه یعنی «پیامک نره» و Comment پنل دیگه حساب نمی‌شه."""
+    if email in contacts:
+        return contacts[email].get("phone") or ""
+    return clean_phone(comment)
+
+
+def merge_comment(old, name, phone):
+    """Comment کانفیگ تو پنل: «اسم شماره»، و اگه یادداشت دیگه‌ای بعد از | بود، دست نمی‌خوره."""
+    old = (old or "").strip()
+    if "|" in old:
+        notes = old.split("|", 1)[1].strip()
+    elif PHONE_RE.search(to_en(old)):
+        notes = ""  # قبلاً خود برنامه نوشته بوده
+    else:
+        notes = old  # یادداشت خود علی
+    head = " ".join(x for x in (name, phone) if x)
+    return head + (" | " + notes if head and notes else notes)
+
+
+def jalali(dt):
+    """تاریخ شمسی (سال، ماه، روز) از datetime."""
+    gy, gm, gd = dt.year, dt.month, dt.day
+    g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
+    gy2 = gy + 1 if gm > 2 else gy
+    days = 355666 + 365 * gy + (gy2 + 3) // 4 - (gy2 + 99) // 100 + (gy2 + 399) // 400 + gd + g_d_m[gm - 1]
+    jy = -1595 + 33 * (days // 12053)
+    days %= 12053
+    jy += 4 * (days // 1461)
+    days %= 1461
+    if days > 365:
+        jy += (days - 1) // 365
+        days = (days - 1) % 365
+    if days < 186:
+        return jy, 1 + days // 31, 1 + days % 31
+    return jy, 7 + (days - 186) // 30, 1 + (days - 186) % 30
+
+
+def jalali_text(dt):
+    return to_fa("%d/%02d/%02d" % jalali(dt))
+
+
+def hm(ms_or_dt):
+    """ساعت به وقت تهران با رقم فارسی: «۱۴:۰۵»."""
+    dt = ms_or_dt if isinstance(ms_or_dt, datetime) else datetime.fromtimestamp(ms_or_dt / 1000, TEHRAN)
+    return to_fa(dt.strftime("%H:%M"))
+
+
 def e164(phone):
     """09121234567 → +989121234567 (قالبی که اپ گوشی می‌خواد)."""
     return "+98" + phone[1:] if phone.startswith("0") else phone

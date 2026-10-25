@@ -23,6 +23,8 @@ DEFAULT_SETTINGS = {
     "app": {"address": "", "port": 8090, "cert": "", "key": ""},
     # پشتیبان خودکار به ربات تلگرام علی (هر روز سر ساعت، به وقت تهران)
     "backup": {"telegram": False, "token": "", "chatId": "", "time": "03:00", "lastSent": 0, "lastError": ""},
+    # گزارش‌ها به همون ربات: ساعتی (فقط اگه اتفاقی افتاده)، خلاصهٔ روزانه، و هشدار قطع و وصل پنل/گوشی
+    "reports": {"hourly": True, "daily": True, "dailyTime": "22:00", "health": True, "lastHourly": 0, "lastDaily": 0},
     "auth": {"salt": "", "hash": ""},
 }
 
@@ -48,7 +50,14 @@ CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, creat
   gateway_id TEXT, error TEXT, sent_at INTEGER, broadcast_id INTEGER);
 CREATE INDEX IF NOT EXISTS idx_messages_status ON messages(status, send_after);
 CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, created_at INTEGER NOT NULL, last_seen INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, kind TEXT NOT NULL,
+  email TEXT NOT NULL DEFAULT '', text TEXT NOT NULL DEFAULT '');
 """
+# ستون‌هایی که بعداً به دیتابیس‌های قبلی اضافه شدن
+MIGRATIONS = [
+    ("messages", "attempts", "INTEGER NOT NULL DEFAULT 0"),
+    ("messages", "wait_reason", "TEXT"),
+]
 
 
 def _merge(base, extra):
@@ -67,8 +76,19 @@ class DB:
         with self.lock:
             self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.executescript(SCHEMA)
+            self.migrate()
             if not self.conn.execute("SELECT 1 FROM templates LIMIT 1").fetchone():
                 self.conn.executemany("INSERT INTO templates (title, text) VALUES (?, ?)", DEFAULT_TEMPLATES)
+            self.conn.commit()
+
+    def migrate(self):
+        """بعد از بازگردانی پشتیبان قدیمی هم صدا زده می‌شه."""
+        with self.lock:
+            self.conn.executescript(SCHEMA)
+            for table, col, decl in MIGRATIONS:
+                cols = {r[1] for r in self.conn.execute("PRAGMA table_info(%s)" % table)}
+                if col not in cols:
+                    self.conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, col, decl))
             self.conn.commit()
 
     # ───── پایه ─────
@@ -144,6 +164,10 @@ class DB:
     def sent_today(self):
         return self.one("SELECT COUNT(*) AS n FROM messages WHERE sent_at >= ? AND status IN ('sending', 'sent', 'delivered')",
                         (util.tehran_day_start_ms(),))["n"]
+
+    # ───── رویدادها (برای گزارش تلگرام) ─────
+    def add_event(self, kind, email="", text=""):
+        self.run("INSERT INTO events (at, kind, email, text) VALUES (?, ?, ?, ?)", (util.now_ms(), kind, email, text))
 
     # ───── نشست‌های ورود ─────
     def add_session(self, token):

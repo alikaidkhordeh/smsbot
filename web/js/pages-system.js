@@ -3,9 +3,10 @@
 App.pages.history = async view => {
   const items = await api.history();
   const STATUS = [
-    { v: 'all', label: 'همه' }, { v: 'sent', label: 'رفته' }, { v: 'queued', label: 'در صف' }, { v: 'failed', label: 'ناموفق' },
+    { v: 'all', label: 'همه' }, { v: 'sent', label: 'رفته' }, { v: 'queued', label: 'در صف' },
+    { v: 'failed', label: 'ناموفق' }, { v: 'skipped', label: 'فرستاده‌نشده' },
   ];
-  const H_ICON = { sent: ['ok', 'check'], queued: ['warn', 'clock'], failed: ['danger', 'x'] };
+  const H_ICON = { sent: ['ok', 'check'], queued: ['warn', 'clock'], failed: ['danger', 'x'], skipped: ['muted', 'x'] };
   const TYPES = { ...TYPE_LABEL, test: 'آزمایشی' };
 
   view.innerHTML = `<div class="stack">
@@ -26,7 +27,9 @@ App.pages.history = async view => {
         <div class="h-top"><b>${esc(h.account || '—')}</b>${h.phone ? `<span class="small muted">${phoneHtml(h.phone)}</span>` : ''}
           <span class="pill">${TYPES[h.type] || h.type}</span><span class="tiny muted">خط ${fa(h.line)} · ${fa(h.at)}${h.delivered ? ' · تحویل شد' : ''}</span>
           <span class="spacer"></span>${STATUS_PILL[h.status]}${h.status === 'failed' ? `<button class="btn btn-sm" data-retry="${h.id}">ارسال دوباره</button>` : ''}</div>
-        <div class="h-text">${esc(h.text)}${h.error ? `<div class="small" style="color:var(--danger)">علت: ${esc(h.error)}</div>` : ''}</div>
+        <div class="h-text">${esc(h.text)}
+          ${h.status === 'queued' && h.wait ? `<div class="small" style="color:var(--warn)">⏳ ${esc(h.wait)}</div>` : ''}
+          ${h.error ? `<div class="small" style="color:${h.status === 'skipped' ? 'var(--muted)' : 'var(--danger)'}">${h.status === 'skipped' ? '' : 'علت: '}${esc(h.error)}</div>` : ''}</div>
       </div>`).join('') : '<div class="empty">پیامکی با این فیلتر نیست.</div>';
   };
   draw();
@@ -46,6 +49,7 @@ App.pages.settings = async view => {
   const s = await api.settings();
   const p = s.panel, ph = s.phone, snd = s.sending, app = s.app;
   const bk = s.backup || { telegram: false, chatId: '', time: '03:00' };
+  const rp = s.reports || { hourly: true, daily: true, dailyTime: '22:00', health: true };
   const savedPh = (has, text = '•••••••• (ذخیره شده)') => (has ? text : '');
   // هنوز وصل نشده → اول فرم نام کاربری و رمز (راحت‌ترین راه)
   const authTab = p.has_token ? 'token' : 'login';
@@ -166,8 +170,8 @@ App.pages.settings = async view => {
         <p class="hint small muted">پشتیبان کامل همه‌چیز رو داره: اتصال پنل و گوشی، شماره‌ها، متن‌ها و تنظیمات. اگه سرور عوض شد: برنامه رو روی سرور جدید نصب کن، وارد شو و همین فایل رو «بازگردانی» کن؛ بعدش با رمز قبلی وارد می‌شی. اکسل شماره‌ها حتی وقتی پنل در دسترس نیست هم خروجی می‌ده.</p>
 
         <div class="divider" style="margin:4px 0"></div>
-        <div class="setting-row"><div class="txt"><b>ارسال خودکار پشتیبان به تلگرام</b><small>هر روز سر ساعت، فایل پشتیبان کامل و اکسل شماره‌ها به ربات تلگرامت فرستاده می‌شه.</small></div>${ui.switch('tgOn', bk.telegram)}</div>
-        <div class="stack" id="tgBox" ${bk.telegram ? '' : 'hidden'}>
+        <div class="setting-row"><div class="txt"><b>ربات تلگرام: پشتیبان خودکار و گزارش‌ها</b><small>فایل پشتیبان، گزارش پیامک‌ها و هشدار قطعی پنل یا گوشی به ربات تلگرامت فرستاده می‌شه.</small></div></div>
+        <div class="stack" id="tgBox">
           <div class="sms-preview small" style="border-style:solid">
             <b>ساخت ربات (یک‌باره):</b> تو تلگرام به <b>@BotFather</b> پیام بده ← <span class="ltr">/newbot</span> ← یه اسم بده ← توکنی که می‌ده رو اینجا بذار. بعد ربات جدیدت رو باز کن و <span class="ltr">/start</span> بفرست و «پیدا کردن خودکار» رو بزن. بهتره یه ربات جدید فقط برای پشتیبان بسازی، نه رباتی که برنامهٔ دیگه‌ای باهاش کار می‌کنه.
           </div>
@@ -177,14 +181,20 @@ App.pages.settings = async view => {
               <div class="hstack"><input class="input ltr" id="tgChat" value="${esc(bk.chatId)}" inputmode="numeric" placeholder="123456789" style="flex:1">
                 <button class="btn btn-sm" id="tgDetect" type="button">پیدا کردن خودکار</button></div></div>
           </div>
-          <div class="form-row two">
-            <div class="field"><label for="tgTime">ساعت ارسال (هر روز، به وقت تهران)</label><input class="input" id="tgTime" type="time" value="${esc(bk.time)}" style="width:140px"></div>
-            <div class="field"><span class="label">آخرین ارسال</span>
-              <div class="small">${bk.lastSent ? esc(bk.lastSentText) : '<span class="muted">هنوز فرستاده نشده</span>'}${bk.lastError ? `<div style="color:var(--danger)">${esc(bk.lastError)}</div>` : ''}</div></div>
-          </div>
+          <div class="field"><span class="label">چی بفرسته؟ (ساعت‌ها به وقت تهران)</span>
+            <div class="stack-sm tg-opts">
+              <div class="hstack wrap"><label class="check"><input type="checkbox" id="tgOn" ${bk.telegram ? 'checked' : ''}>💾 پشتیبان کامل + اکسل شماره‌ها، هر روز ساعت</label>
+                <input class="input" id="tgTime" type="time" value="${esc(bk.time)}" style="width:130px"></div>
+              <label class="check"><input type="checkbox" id="rpHourly" ${rp.hourly ? 'checked' : ''}>🔔 گزارش ساعتی (فقط اگه تو اون ساعت پیامکی رفت، نرفت، یا کسی بدون شماره به حد هشدار رسید)</label>
+              <div class="hstack wrap"><label class="check"><input type="checkbox" id="rpDaily" ${rp.daily ? 'checked' : ''}>📊 خلاصهٔ روزانه، ساعت</label>
+                <input class="input" id="rpTime" type="time" value="${esc(rp.dailyTime)}" style="width:130px"></div>
+              <label class="check"><input type="checkbox" id="rpHealth" ${rp.health ? 'checked' : ''}>🔴 هشدار فوری وقتی پنل یا گوشی قطع می‌شه (و وقتی دوباره وصل می‌شه)</label>
+            </div></div>
+          <div class="small muted">آخرین پشتیبان: ${bk.lastSent ? esc(bk.lastSentText) : 'هنوز فرستاده نشده'}${bk.lastError ? ` · <span style="color:var(--danger)">${esc(bk.lastError)}</span>` : ''}</div>
           <div class="hstack wrap">
             <button class="btn btn-primary" id="tgSave" type="button">${icon('check')}ذخیره</button>
             <button class="btn" id="tgTest" type="button">${icon('send')}پیام آزمایشی</button>
+            <button class="btn" id="tgReport" type="button">${icon('history')}گزارش آزمایشی</button>
             <button class="btn" id="tgSend" type="button">${icon('download')}ارسال پشتیبان الان</button>
           </div>
           <div id="tgResult"></div>
@@ -353,14 +363,19 @@ App.pages.settings = async view => {
   };
 
   // پشتیبان خودکار تلگرام
-  $('[name="tgOn"]').addEventListener('change', e => { $('#tgBox').hidden = !e.target.checked; });
   const tgBox = (ok, html) => showBox($('#tgResult'), ok, html);
-  const tgForm = () => ({ telegram: $('[name="tgOn"]').checked, token: $('#tgToken').value.trim(), chatId: toEn($('#tgChat').value).trim(), time: $('#tgTime').value });
-  const saveTg = () => api.saveSettings({ backup: tgForm() });
-  $('[name="tgOn"]').addEventListener('change', () => saveTg().then(() => toast($('[name="tgOn"]').checked ? 'پشتیبان خودکار روشن شد' : 'پشتیبان خودکار خاموش شد')));
+  const tgForm = () => ({ telegram: $('#tgOn').checked, token: $('#tgToken').value.trim(), chatId: toEn($('#tgChat').value).trim(), time: $('#tgTime').value });
+  const rpForm = () => ({ hourly: $('#rpHourly').checked, daily: $('#rpDaily').checked, dailyTime: $('#rpTime').value, health: $('#rpHealth').checked });
+  const saveTg = () => api.saveSettings({ backup: tgForm(), reports: rpForm() });
   $('#tgSave').onclick = async e => {
     await busy(e.currentTarget, saveTg);
-    toast('تنظیمات پشتیبان ذخیره شد');
+    toast('تنظیمات ربات تلگرام ذخیره شد');
+  };
+  $('#tgReport').onclick = async e => {
+    try {
+      await busy(e.currentTarget, async () => { await saveTg(); return api.telegramReport(); });
+      tgBox(true, 'خلاصهٔ امروز تو تلگرام فرستاده شد');
+    } catch (err) { tgBox(false, esc(err.message)); }
   };
   $('#tgDetect').onclick = async e => {
     try {

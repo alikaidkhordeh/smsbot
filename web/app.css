@@ -419,6 +419,7 @@ button { cursor: pointer; }
 .history-item .h-ico.ok { background: var(--ok-soft); color: var(--ok); }
 .history-item .h-ico.danger { background: var(--danger-soft); color: var(--danger); }
 .history-item .h-ico.warn { background: var(--warn-soft); color: var(--warn); }
+.history-item .h-ico.muted { background: var(--surface-2); color: var(--muted); }
 .history-item .h-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .history-item .h-text { font-size: 13.5px; color: var(--text-2); }
 

@@ -72,8 +72,11 @@ class Telegram:
             raise TelegramError(_explain(0, res.get("description", "")))
         return res.get("result")
 
-    def send_message(self, chat_id, text):
-        return self._call("sendMessage", {"chat_id": chat_id, "text": text})
+    def send_message(self, chat_id, text, html=False):
+        data = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
+        if html:
+            data["parse_mode"] = "HTML"
+        return self._call("sendMessage", data)
 
     def send_document(self, chat_id, filename, content, caption=""):
         return self._call("sendDocument", {"chat_id": str(chat_id), "caption": caption}, {"document": (filename, content)})

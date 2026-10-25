@@ -5,6 +5,7 @@ const STATUS_PILL = {
   sent: '<span class="pill ok">رفته</span>',
   queued: '<span class="pill warn">در صف</span>',
   failed: '<span class="pill danger">ناموفق</span>',
+  skipped: '<span class="pill">فرستاده نشد</span>',
 };
 
 function nearMeta(c, st) {
@@ -51,6 +52,8 @@ App.pages.dashboard = async view => {
       <div class="card stat"><span class="label">${icon('send', 'i-sm')}پیامک امروز</span><span class="value">${fa(s.smsToday)}</span><span class="sub">از سقف ${fa(s.dailyLimit)} پیامک${s.queued ? ` · ${fa(s.queued)} در صف` : ''}</span></div>
       <div class="card stat"><span class="label">${icon('phone', 'i-sm')}بدون شماره</span><span class="value">${fa(noPhone)}</span><span class="sub"><a href="#/clients?f=nophone">ثبت شماره‌ها</a></span></div>
     </div>
+
+    ${s.queued && s.queueReason ? `<div class="banner" style="background:var(--warn-soft)">${icon('clock')}<p>${fa(s.queued)} پیامک تو صفه: ${esc(s.queueReason)}</p><a class="btn btn-sm" href="#/history">تاریخچه</a></div>` : ''}
 
     ${s.panel.configured === false || !s.phone.configured ? `<div class="banner">${icon('settings')}<p>برای شروع، از تنظیمات ${s.panel.configured === false ? 'پنل' : ''}${s.panel.configured === false && !s.phone.configured ? ' و ' : ''}${!s.phone.configured ? 'گوشی' : ''} رو وصل کن.</p><a class="btn btn-sm btn-primary" href="#/settings">تنظیمات</a></div>` : ''}
 

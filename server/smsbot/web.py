@@ -16,7 +16,7 @@ import urllib.parse
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import backup, util
+from . import backup, reports, util
 from .gateway import GatewayError
 from .panel import Panel, PanelError, normalize, resolve_url
 from .telegram import Telegram, TelegramError
@@ -264,7 +264,7 @@ def serve(app, host, port, cert="", key=""):
 
 SECRET_FIELDS = {"panel": ("token", "password"), "phone": ("password",), "backup": ("token",)}
 STATUS_VIEW = {"queued": "queued", "sending": "queued", "sent": "sent", "delivered": "sent",
-               "failed": "failed", "cancelled": "failed"}
+               "failed": "failed", "cancelled": "failed", "skipped": "skipped"}
 
 
 def _int(v, default=0, lo=None, hi=None):
@@ -367,8 +367,8 @@ class App:
             for c in map(normalize, raw):
                 ct = contacts.get(c["email"]) or {}
                 c["name"] = ct.get("name", "")
-                c["phone"] = ct.get("phone") or util.clean_phone(c["comment"])
-                st = states.get(c["email"], set()) - {"ended"}
+                c["phone"] = util.phone_for(contacts, c["email"], c["comment"])
+                st = {x for x in states.get(c["email"], set()) if x in ("volume", "expiry")}
                 c["alerted"] = sorted(st)[0] if st else None
                 out.append(c)
             return out
@@ -414,6 +414,7 @@ class App:
             phone = util.clean_phone(b.get("phone")) if b.get("phone") else ""
             if b.get("phone") and not phone:
                 raise ApiError("شماره باید ۱۱ رقم باشه و با ۰۹ شروع بشه.")
+            name = str(b.get("name") or "").strip()
             changes = {}
             if account and account != email:
                 changes["email"] = account
@@ -421,11 +422,17 @@ class App:
                 changes["limitIp"] = _int(b.get("limitIp"), 0, 0)
             if "enabled" in b:
                 changes["enable"] = bool(b.get("enabled"))
+            # اسم و شماره تو Comment خود کانفیگ هم نوشته می‌شه (با تغییر اسم کانفیگ تو پنل گم نشه)؛
+            # شماره پاک شد → از Comment هم پاک می‌شه که پیامک نره
+            rec = (panel_call(e.panel().get_client, email) or {}).get("client") or {}
+            comment = util.merge_comment(rec.get("comment") or "", name, phone)
+            if comment != (rec.get("comment") or ""):
+                changes["comment"] = comment
             if changes:
                 panel_call(e.panel().update_client, email, **changes)
             if account != email:
                 d.rename_contact(email, account)
-            d.save_contact(account, str(b.get("name") or "").strip(), phone)
+            d.save_contact(account, name, phone)
             return True
 
         @route("POST", "/api/clients/renew")
@@ -551,11 +558,21 @@ class App:
         def history(h, b, q):
             rows = d.q("SELECT m.*, b.title AS btitle FROM messages m LEFT JOIN broadcasts b ON b.id = m.broadcast_id "
                        "ORDER BY m.id DESC LIMIT ?", (_int(q.get("limit"), 300, 1, 2000),))
+            def waiting(r):
+                """چرا این پیامک هنوز تو صفه."""
+                if r["status"] == "sending":
+                    return "رسیده به سرور اپ؛ منتظر ارسال از گوشی"
+                if r["status"] != "queued":
+                    return ""
+                if r["send_after"] and r["send_after"] > util.now_ms():
+                    return r["wait_reason"] or ("زمان‌بندی‌شده برای ساعت %s" % util.hm(r["send_after"]))
+                return e.queue_reason or "نوبتش داره می‌رسه"
+
             return [{"id": r["id"], "at": util.fmt_time(r["sent_at"] or r["created_at"]),
                      "account": r["email"] or ("آزمایشی" if r["type"] == "test" else ""), "phone": r["phone"],
                      "type": r["type"], "line": r["line"], "status": STATUS_VIEW.get(r["status"], "queued"),
                      "delivered": r["status"] == "delivered", "text": r["text"], "error": r["error"] or "",
-                     "broadcast": r["btitle"] or ""} for r in rows]
+                     "wait": waiting(r), "broadcast": r["btitle"] or ""} for r in rows]
 
         @route("POST", "/api/history/retry")
         def retry(h, b, q):
@@ -613,7 +630,7 @@ class App:
         @route("GET", "/api/settings")
         def settings_get(h, b, q):
             s = d.settings()
-            out = {k: dict(s[k]) for k in ("panel", "phone", "sending", "app", "backup")}
+            out = {k: dict(s[k]) for k in ("panel", "phone", "sending", "app", "backup", "reports")}
             for sec, fields in SECRET_FIELDS.items():
                 for f in fields:
                     out[sec]["has_" + f] = bool(out[sec].get(f))
@@ -643,6 +660,10 @@ class App:
             bk["telegram"] = bool(bk.get("telegram"))
             bk["chatId"] = str(bk.get("chatId") or "").strip()
             bk["time"] = "%02d:%02d" % divmod(util.parse_hhmm(bk.get("time"), 3 * 60), 60)
+            rp = merged_section("reports", {k: v for k, v in (b.get("reports") or {}).items() if k in ("hourly", "daily", "dailyTime", "health")})
+            for k in ("hourly", "daily", "health"):
+                rp[k] = bool(rp.get(k))
+            rp["dailyTime"] = "%02d:%02d" % divmod(util.parse_hhmm(rp.get("dailyTime"), 22 * 60), 60)
             sending["gapSec"] = _int(sending.get("gapSec"), 20, 1, 3600)
             sending["dailyLimit"] = _int(sending.get("dailyLimit"), 50, 1, 5000)
             app["port"] = _int(app.get("port"), 8090, 1, 65535)
@@ -654,7 +675,7 @@ class App:
                 panel["url"] = resolve_url(panel["url"], panel.get("linkHost") or "")
                 if panel.get("linkHost") == old["panel"].get("linkHost"):
                     panel["linkHost"] = ""  # آدرس پنل عوض شد → آدرس لینک‌ها دوباره خودکار پیدا بشه
-            for k, v in (("panel", panel), ("phone", phone), ("sending", sending), ("app", app), ("backup", bk)):
+            for k, v in (("panel", panel), ("phone", phone), ("sending", sending), ("app", app), ("backup", bk), ("reports", rp)):
                 d.save_section(k, v)
             restart = any(old["app"].get(k) != app.get(k) for k in ("port", "cert", "key"))
             if restart:
@@ -762,6 +783,15 @@ class App:
             if not chat:
                 raise ApiError("شناسهٔ چت رو وارد کن (یا «پیدا کردن خودکار» رو بزن).")
             tg.send_message(chat, "ربات پشتیبان «پنل پیامک» وصله. فایل‌های پشتیبان هر روز اینجا فرستاده می‌شن.")
+            return True
+
+        @route("POST", "/api/telegram/report")
+        def telegram_report(h, b, q):
+            """خلاصهٔ امروز همین الان (برای دیدن شکل گزارش‌ها)."""
+            tg, chat = tg_cfg({})
+            if not chat:
+                raise ApiError("اول توکن ربات و شناسهٔ چت رو ذخیره کن.")
+            tg.send_message(chat, reports.daily(d, util.tehran_day_start_ms(), e.status_view(), e.queue_reason, e.near_count), html=True)
             return True
 
         @route("POST", "/api/telegram/send")

@@ -105,6 +105,7 @@ const api = {
   telegramDetect: token => post('/api/telegram/detect', { token }),
   telegramTest: (token, chatId) => post('/api/telegram/test', { token, chatId }),
   telegramSend: () => post('/api/telegram/send'),
+  telegramReport: () => post('/api/telegram/report'),
   update: () => post('/api/update'),
   logs: () => get('/api/logs'),
 };

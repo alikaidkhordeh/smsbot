@@ -55,6 +55,7 @@ def restore_db(db, data):
                 src.backup(db.conn)
         finally:
             src.close()
+        db.migrate()  # پشتیبان از نسخه‌های قدیمی‌تر: ستون‌ها و جدول‌های جدید اضافه بشن
     finally:
         os.remove(path)
 
@@ -81,7 +82,7 @@ def contact_rows(db, engine):
     rows, seen = [], set()
     for email, c in clients.items():
         ct = contacts.get(email) or {}
-        phone = ct.get("phone") or util.clean_phone(c["comment"])
+        phone = util.phone_for(contacts, email, c["comment"])
         if not phone:
             continue
         left = max(0.0, c["totalGB"] - c["usedGB"]) if c["totalGB"] > 0 else None

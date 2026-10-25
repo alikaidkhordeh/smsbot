@@ -5,7 +5,7 @@ const MOCK = {
   status: {
     panel: { ok: true, type: '3X-UI', version: 'v3.5.0', checkedAgo: 2, error: '' },
     phone: { ok: true, configured: true, device: 'Galaxy A54', lastSeenAgo: 1, error: '' },
-    smsToday: 7, dailyLimit: 50, queued: 1,
+    smsToday: 7, dailyLimit: 50, queued: 1, queueReason: 'بیرون از ساعت مجاز؛ ساعت ۰۹:۰۰ فرستاده می‌شه',
   },
 
   inbounds: [
@@ -66,6 +66,7 @@ const MOCK = {
     sending: { from: '09:00', to: '22:00', gapSec: 20, dailyLimit: 50 },
     app: { address: 'sms.example.com', port: 8090, cert: '', key: '' },
     backup: { telegram: true, token: '', has_token: true, chatId: '123456789', time: '03:00', lastSent: 1, lastSentText: 'امروز ۰۳:۰۰', lastError: '' },
+    reports: { hourly: true, daily: true, dailyTime: '22:00', health: true },
     version: '0.2.0',
   },
 };
@@ -168,6 +169,7 @@ const api = {
   async telegramDetect() { await wait(900); return [{ id: '123456789', name: 'Ali' }]; },
   async telegramTest() { await wait(900); return true; },
   async telegramSend() { await wait(1500); return { sentAt: 'امروز ۰۳:۰۰' }; },
+  async telegramReport() { await wait(900); return true; },
   async update() { await wait(1500); return { updated: false, version: '0.2.0' }; },
   async logs() { await wait(); return ['10-25 09:00:01 INFO alert queued: volume VPN7', '10-25 09:00:21 INFO listening']; },
 };
