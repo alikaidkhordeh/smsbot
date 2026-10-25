@@ -492,6 +492,13 @@ button { cursor: pointer; }
 .result.ok { background: var(--ok-soft); color: var(--ok); }
 .result.danger { background: var(--danger-soft); color: var(--danger); }
 
+.log-box {
+  margin: 12px 0 0; max-height: 320px; overflow: auto; padding: 12px;
+  border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--border);
+  direction: ltr; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere;
+  font: 12px/1.6 ui-monospace, Consolas, monospace; color: var(--text-2);
+}
+
 /* ───── کانفیگ‌ها ───── */
 .client-row { cursor: pointer; }
 .group-head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: 2px 4px 10px; font-size: 14.5px; }

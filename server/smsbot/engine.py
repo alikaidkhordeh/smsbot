@@ -33,6 +33,8 @@ class Engine:
         return Gateway(cfg or self.db.settings()["phone"])
 
     def mark_panel(self, ok, error=""):
+        if error and error != self.panel_status.get("error"):
+            log.warning("panel: %s", error)
         self.panel_status.update(ok=ok, error=error, checkedAt=time.time())
 
     def check_soon(self):
@@ -189,6 +191,8 @@ class Engine:
         try:
             devs = gw.devices()
         except GatewayError as e:
+            if str(e) != self.phone_status.get("error"):
+                log.warning("phone: %s", e)
             self.phone_status.update(ok=False, error=str(e), checkedAt=time.time())
             return
         if not devs:

@@ -10,6 +10,9 @@ TEHRAN = timezone(timedelta(hours=3, minutes=30))
 GB = 1024 ** 3
 DAY_MS = 86_400_000
 
+# کلادفلر درخواست‌های پایتون بدون شناسه رو رد می‌کنه (خطای 1010)
+USER_AGENT = "smsbot (+https://github.com/alikaidkhordeh/smsbot)"
+
 FA_DIGITS = "۰۱۲۳۴۵۶۷۸۹"
 _TO_EN = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "0123456789" * 2)
 _TO_FA = str.maketrans("0123456789", FA_DIGITS)

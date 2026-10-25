@@ -1,4 +1,5 @@
 """سرور وب برنامه: نمایش صفحه‌ها، API برای صفحه‌ها، ورود با رمز."""
+import collections
 import hashlib
 import hmac
 import json
@@ -12,11 +13,12 @@ import subprocess
 import threading
 import time
 import urllib.parse
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import util
 from .gateway import GatewayError
-from .panel import Panel, PanelError, normalize
+from .panel import Panel, PanelError, normalize, resolve_url
 
 log = logging.getLogger("smsbot")
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -27,6 +29,26 @@ MAX_BODY = 4 * 1024 * 1024
 mimetypes.add_type("text/javascript", ".js")
 mimetypes.add_type("font/ttf", ".ttf")
 mimetypes.add_type("application/manifest+json", ".webmanifest")
+
+
+class MemoryLog(logging.Handler):
+    """۳۰۰ خط آخر گزارش برنامه تو حافظه، برای صفحهٔ «گزارش برنامه» (که برای پیدا کردن مشکل ترمینال لازم نباشه)."""
+
+    def __init__(self, size=300):
+        super().__init__()
+        self.lines = collections.deque(maxlen=size)
+        fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s", "%m-%d %H:%M:%S")
+        fmt.converter = lambda ts: datetime.fromtimestamp(ts, util.TEHRAN).timetuple()  # ساعت تهران
+        self.setFormatter(fmt)
+
+    def emit(self, record):
+        try:
+            self.lines.append(self.format(record))
+        except Exception:  # گزارش نباید برنامه رو بخوابونه
+            pass
+
+
+MEMORY_LOG = MemoryLog()
 
 
 class ApiError(Exception):
@@ -170,7 +192,9 @@ class Handler(BaseHTTPRequestHandler):
         except ApiError as e:
             return self._json(e.status, {"ok": False, "error": str(e)})
         except (PanelError, GatewayError) as e:
-            return self._json(502, {"ok": False, "error": str(e)})
+            # نه ۵۰۲: کلادفلر جواب ۵۰۲/۵۰۴ رو با صفحهٔ خطای خودش عوض می‌کنه و پیام اصلی گم می‌شه
+            log.warning("%s %s: %s", method, url.path, e)
+            return self._json(422, {"ok": False, "error": str(e)})
         except Exception:
             log.exception("api %s %s", method, url.path)
             return self._json(500, {"ok": False, "error": "خطای داخلی برنامه؛ لاگ سرور رو ببین."})
@@ -579,8 +603,10 @@ class App:
             for c in ("cert", "key"):
                 if app.get(c) and not os.path.isfile(app[c]):
                     raise ApiError("فایل گواهی پیدا نشد: " + app[c])
-            if panel.get("url") != old["panel"].get("url") and panel.get("linkHost") == old["panel"].get("linkHost"):
-                panel["linkHost"] = ""  # آدرس پنل عوض شد → آدرس لینک‌ها دوباره خودکار پیدا بشه
+            if panel.get("url") != old["panel"].get("url"):
+                panel["url"] = resolve_url(panel["url"], panel.get("linkHost") or "")
+                if panel.get("linkHost") == old["panel"].get("linkHost"):
+                    panel["linkHost"] = ""  # آدرس پنل عوض شد → آدرس لینک‌ها دوباره خودکار پیدا بشه
             for k, v in (("panel", panel), ("phone", phone), ("sending", sending), ("app", app)):
                 d.save_section(k, v)
             restart = any(old["app"].get(k) != app.get(k) for k in ("port", "cert", "key"))
@@ -608,7 +634,10 @@ class App:
         @route("POST", "/api/test/panel")
         def test_panel(h, b, q):
             src = b.get("panel")
-            r = test_cfg(merged_section("panel", src) if src else d.settings()["panel"])
+            cfg = merged_section("panel", src) if src else d.settings()["panel"]
+            cfg["url"] = resolve_url(cfg.get("url"), cfg.get("linkHost") or "")
+            r = test_cfg(cfg)
+            r["url"] = cfg["url"]
             if not src:
                 e.mark_panel(True)
                 fill_link_host(r)
@@ -616,7 +645,7 @@ class App:
 
         @route("POST", "/api/panel/connect")
         def panel_connect(h, b, q):
-            url = str(b.get("url") or "").strip()
+            url = resolve_url(str(b.get("url") or ""), d.settings()["panel"].get("linkHost") or "")
             p = Panel({"url": url, "auth": "login", "username": b.get("username") or "", "password": b.get("password") or ""})
             p.login(str(b.get("twoFactorCode") or "").strip())
             cfg = dict(d.settings()["panel"], url=url)
@@ -638,6 +667,10 @@ class App:
         def panel_certs(h, b, q):
             s = panel_call(e.panel().settings)
             return {"cert": s.get("webCertFile") or "", "key": s.get("webKeyFile") or "", "domain": s.get("webDomain") or ""}
+
+        @route("GET", "/api/logs")
+        def logs(h, b, q):
+            return list(MEMORY_LOG.lines)[-200:]
 
         # ───── پشتیبان و آپدیت ─────
         @route("GET", "/api/backup")

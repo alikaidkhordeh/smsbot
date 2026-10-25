@@ -43,7 +43,7 @@ class Panel:
     def _raw(self, method, path, body=None, extra_headers=None):
         if not self.base.startswith(("http://", "https://")):
             raise PanelError("آدرس پنل باید با http:// یا https:// شروع بشه.")
-        headers = {"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"}
+        headers = {"Accept": "application/json", "X-Requested-With": "XMLHttpRequest", "User-Agent": util.USER_AGENT}
         if self.host:
             headers["Host"] = self.host
         data = None
@@ -214,6 +214,43 @@ class Panel:
         if not token:
             raise PanelError("پنل توکن نساخت؛ از تنظیمات پنل دستی بسازش.")
         return token
+
+
+def candidate_bases(url):
+    """کاربر معمولاً آدرس صفحهٔ داشبورد پنل رو کپی می‌کنه (…/مسیر/panel/ یا …/panel/inbounds)؛ API از خود …/مسیر/
+    شروع می‌شه. همهٔ حالت‌های ممکن، به ترتیب احتمال."""
+    url = (url or "").strip()
+    if not url:
+        return [""]
+    p = urllib.parse.urlsplit(url)
+    path = p.path.rstrip("/")
+    paths = []
+    i = path.find("/panel")
+    while i != -1:
+        end = i + len("/panel")
+        if end == len(path) or path[end] == "/":
+            paths.append(path[:i])
+        i = path.find("/panel", i + 1)
+    paths.append(path)
+    out = []
+    for x in paths:
+        u = urllib.parse.urlunsplit((p.scheme, p.netloc, x, "", "")) + "/"
+        if u not in out:
+            out.append(u)
+    return out
+
+
+def resolve_url(url, link_host=""):
+    """اولین آدرسی که صفحهٔ ورود پنل ازش جواب می‌ده؛ اگه هیچ‌کدوم جواب نداد همون اولی."""
+    cands = candidate_bases(url)
+    for c in cands:
+        try:
+            r = Panel({"url": c, "linkHost": link_host})._raw("GET", "/csrf-token")
+            if isinstance(r, dict) and r.get("success"):
+                return c
+        except (PanelError, _AuthExpired):
+            continue
+    return cands[0]
 
 
 class _AuthExpired(Exception):

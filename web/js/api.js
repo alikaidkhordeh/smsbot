@@ -15,7 +15,7 @@ async function req(method, path, body) {
     App.onUnauthorized();
     throw Object.assign(new Error(j.error || 'اول وارد شو'), { toasted: true });
   }
-  if (!r.ok || j.ok === false) throw new Error(j.error || 'خطای ارتباط با سرور');
+  if (!r.ok || j.ok === false) throw new Error(j.error || `خطای ارتباط با سرور (کد ${r.status})`);
   return j.data;
 }
 const get = path => req('GET', path);
@@ -70,4 +70,5 @@ const api = {
   backup: () => get('/api/backup'),
   restore: data => post('/api/restore', data),
   update: () => post('/api/update'),
+  logs: () => get('/api/logs'),
 };

@@ -11,7 +11,7 @@ import sys
 
 from .db import DB
 from .engine import Engine
-from .web import ROOT, App, serve, set_password
+from .web import MEMORY_LOG, ROOT, App, serve, set_password
 
 
 def main(argv=None):
@@ -34,6 +34,8 @@ def main(argv=None):
 
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
+    MEMORY_LOG.setLevel(logging.INFO)
+    logging.getLogger().addHandler(MEMORY_LOG)
     db = DB(os.path.join(args.data, "smsbot.db"))
 
     configure = (args.set_password, args.set_port, args.panel_url, args.panel_token, args.link_host, args.app_cert, args.app_domain)

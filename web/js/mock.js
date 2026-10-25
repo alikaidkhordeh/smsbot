@@ -159,4 +159,5 @@ const api = {
   async backup() { await wait(); return { app: 'smsbot', contacts: MOCK.clients.filter(c => c.phone).map(c => ({ email: c.email, name: c.name, phone: c.phone })) }; },
   async restore(data) { await wait(); return { contacts: (data.contacts || []).length }; },
   async update() { await wait(1500); return { updated: false, version: '0.2.0' }; },
+  async logs() { await wait(); return ['10-25 09:00:01 INFO alert queued: volume VPN7', '10-25 09:00:21 INFO listening']; },
 };

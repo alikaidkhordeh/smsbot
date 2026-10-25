@@ -164,7 +164,23 @@ App.pages.settings = async view => {
         <button class="btn btn-sm" id="updBtn">${icon('download', 'i-sm')}بررسی و نصب آپدیت</button>
       </div>
     </div>
+
+    <div class="card">
+      <div class="card-head"><span class="ico">${icon('history')}</span><div><h2>گزارش برنامه</h2><p>اگه چیزی کار نکرد، اینجا علتش نوشته شده؛ می‌تونی کپی کنی و بفرستی</p></div></div>
+      <div class="hstack wrap"><button class="btn btn-sm" id="logBtn">${icon('refresh', 'i-sm')}نمایش گزارش</button>
+        <button class="btn btn-sm" id="logCopy" hidden>${icon('copy', 'i-sm')}کپی گزارش</button></div>
+      <pre class="log-box" id="logBox" hidden></pre>
+    </div>
   </div>`;
+
+  $('#logBtn').onclick = async e => {
+    const lines = await busy(e.currentTarget, () => api.logs());
+    const box = $('#logBox');
+    box.textContent = lines.length ? lines.slice().reverse().join('\n') : 'هنوز گزارشی نیست.';
+    box.hidden = false;
+    $('#logCopy').hidden = !lines.length;
+    $('#logCopy').onclick = () => copyText(box.textContent);
+  };
 
   const showBox = (el, ok, html) => { el.innerHTML = `<div class="result ${ok ? 'ok' : 'danger'}">${icon(ok ? 'check' : 'alert')}${html}</div>`; };
   const panelForm = () => ({
@@ -184,6 +200,7 @@ App.pages.settings = async view => {
     try {
       const r = await busy(e.currentTarget, () => api.testPanel(panelForm()));
       showBox($('#pResult'), true, `وصل شد${r.version ? ` · نسخهٔ <span class="ltr">${esc(r.version)}</span>` : ''} · ${fa(r.clients)} کانفیگ`);
+      if (r.url) $('#pUrl').value = r.url;
       if (!$('#pHost').value && r.linkHost) $('#pHost').value = r.linkHost;
     } catch (err) {
       showBox($('#pResult'), false, esc(err.message));
@@ -195,9 +212,9 @@ App.pages.settings = async view => {
       const r = await busy(e.currentTarget, () => api.connectPanel({
         url: $('#pUrl').value.trim(), username: $('#pUser').value.trim(), password: $('#pPass').value, twoFactorCode: $('#p2fa').value.trim(),
       }));
-      showBox($('#pResult'), true, `وصل شد · ${fa(r.clients)} کانفیگ · ${r.auth === 'token' ? 'توکن مخصوص برنامه ساخته شد' : 'با نام کاربری و رمز'}`);
-      toast('به پنل وصل شد');
+      toast(`به پنل وصل شد · ${fa(r.clients)} کانفیگ · ${r.auth === 'token' ? 'توکن مخصوص برنامه ساخته شد' : 'با نام کاربری و رمز'}`);
       renderTopStatus();
+      App.go();  // آدرس تمیزشده و روش اتصال جدید رو نشون بده
     } catch (err) {
       showBox($('#pResult'), false, esc(err.message));
     }

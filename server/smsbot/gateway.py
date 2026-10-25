@@ -39,7 +39,8 @@ class Gateway:
         if not self.configured:
             raise GatewayError("اتصال گوشی تنظیم نشده؛ نام کاربری و رمز اپ رو تو تنظیمات وارد کن.")
         auth = base64.b64encode(("%s:%s" % (self.user, self.password)).encode()).decode()
-        headers = {"Authorization": "Basic " + auth, "Accept": "application/json"}
+        # بدون User-Agent، کلادفلرِ جلوی سرور اپ درخواست پایتون رو با خطای 1010 (۴۰۳) رد می‌کنه
+        headers = {"Authorization": "Basic " + auth, "Accept": "application/json", "User-Agent": util.USER_AGENT}
         data = None
         if body is not None:
             data = json.dumps(body, ensure_ascii=False).encode()
@@ -55,7 +56,9 @@ class Gateway:
             except (ValueError, AttributeError):
                 pass
             if e.code == 401:
-                raise GatewayError("نام کاربری یا رمز اپ گوشی اشتباهه.")
+                raise GatewayError("نام کاربری یا رمز اپ گوشی اشتباهه (همونی که تو اپ زیر Cloud server نوشته).")
+            if e.code == 403:
+                raise GatewayError("سرور اپ گوشی درخواست رو رد کرد (۴۰۳). " + detail)
             if e.code == 503:
                 raise GatewayError("صف اپ پره یا گوشی آنلاین نیست. " + detail)
             raise GatewayError("خطای اپ گوشی (%s) %s" % (e.code, detail))
