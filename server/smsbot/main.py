@@ -28,6 +28,7 @@ def main(argv=None):
     ap.add_argument("--link-host")
     ap.add_argument("--app-cert")
     ap.add_argument("--app-key")
+    ap.add_argument("--app-domain")
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args(argv)
 
@@ -35,7 +36,7 @@ def main(argv=None):
                         format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
     db = DB(os.path.join(args.data, "smsbot.db"))
 
-    configure = (args.set_password, args.set_port, args.panel_url, args.panel_token, args.link_host, args.app_cert)
+    configure = (args.set_password, args.set_port, args.panel_url, args.panel_token, args.link_host, args.app_cert, args.app_domain)
     if any(configure):
         s = db.settings()
         if args.set_password:
@@ -47,6 +48,8 @@ def main(argv=None):
             s["app"]["port"] = args.set_port
         if args.app_cert and args.app_key:
             s["app"].update(cert=args.app_cert, key=args.app_key)
+        if args.app_domain:
+            s["app"]["address"] = args.app_domain
         if args.panel_url:
             s["panel"]["url"] = args.panel_url
         if args.panel_token:
@@ -63,4 +66,8 @@ def main(argv=None):
     engine = Engine(db)
     engine.start()
     app_cfg = db.settings()["app"]
-    serve(App(db, engine), args.host, args.port or int(app_cfg.get("port") or 8090), app_cfg.get("cert"), app_cfg.get("key"))
+    cert, key = app_cfg.get("cert"), app_cfg.get("key")
+    if not (cert and key):
+        # گواهی خودامضا (نصب‌کننده می‌سازه) → همون پورت https هم جواب می‌ده؛ برای کلادفلر حالت Full کافیه
+        cert, key = os.path.join(args.data, "tls", "cert.pem"), os.path.join(args.data, "tls", "key.pem")
+    serve(App(db, engine), args.host, args.port or int(app_cfg.get("port") or 8090), cert, key)

@@ -6,6 +6,7 @@ import logging
 import mimetypes
 import os
 import secrets
+import socket
 import ssl
 import subprocess
 import threading
@@ -126,8 +127,8 @@ class Handler(BaseHTTPRequestHandler):
         return bool(tok) and self.app.db.touch_session(tok, SESSION_IDLE_MS)
 
     def _cookie(self, value, max_age):
-        # پشت کلادفلر، https رو کلادفلر می‌ده و به برنامه http می‌رسه؛ X-Forwarded-Proto اینو می‌گه
-        https = self.app.https or self.headers.get("X-Forwarded-Proto") == "https"
+        # https مستقیم، یا پشت کلادفلر (کلادفلر https رو می‌ده و X-Forwarded-Proto اینو می‌گه)
+        https = isinstance(self.connection, ssl.SSLSocket) or self.headers.get("X-Forwarded-Proto") == "https"
         secure = "; Secure" if https else ""
         return "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d%s" % (COOKIE, value, max_age, secure)
 
@@ -175,16 +176,41 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(500, {"ok": False, "error": "خطای داخلی برنامه؛ لاگ سرور رو ببین."})
 
 
+class DualServer(ThreadingHTTPServer):
+    """یک پورت، هم http هم https: بایت اول اتصال رو نگاه می‌کنه؛ اگه شروع TLS بود (0x16) رمزنگاری می‌کنه.
+    این‌طوری پشت کلادفلر با هر حالت SSL (Flexible که http می‌فرسته یا Full که https) کار می‌کنه."""
+    daemon_threads = True
+    ssl_ctx = None
+
+    def finish_request(self, request, client_address):
+        conn = request
+        if self.ssl_ctx:
+            try:
+                request.settimeout(15)
+                first = request.recv(1, socket.MSG_PEEK)
+                if first == b"\x16":
+                    conn = self.ssl_ctx.wrap_socket(request, server_side=True)
+                conn.settimeout(None)
+            except (OSError, ssl.SSLError):
+                return
+        try:
+            self.RequestHandlerClass(conn, client_address, self)
+        finally:
+            if conn is not request:
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+
+
 def serve(app, host, port, cert="", key=""):
     Handler.app = app
-    httpd = ThreadingHTTPServer((host, port), Handler)
-    httpd.daemon_threads = True
+    httpd = DualServer((host, port), Handler)
     if cert and key and os.path.isfile(cert) and os.path.isfile(key):
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(cert, key)
-        httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
-        app.https = True
-    log.info("listening on %s://%s:%s", "https" if app.https else "http", host, port)
+        httpd.ssl_ctx = ctx
+    log.info("listening on %s:%s (http%s)", host, port, " + https" if httpd.ssl_ctx else "")
     httpd.serve_forever()
 
 SECRET_FIELDS = {"panel": ("token", "password"), "phone": ("password",)}

@@ -16,6 +16,12 @@
 bash <(curl -Ls https://raw.githubusercontent.com/alikaidkhordeh/smsbot/main/install.sh)
 ```
 
+اگه برای برنامه دامنه ساختی (مثلاً `sms.example.com`)، این‌طوری بزن تا آدرس کامل رو هم نشون بده:
+
+```bash
+SMSBOT_DOMAIN=sms.example.com bash <(curl -Ls https://raw.githubusercontent.com/alikaidkhordeh/smsbot/main/install.sh)
+```
+
 آخر کار **آدرس برنامه و رمز ورود** رو نشون می‌ده.
 
 - **روی یه سرور جدا از پنل** (مثلاً سرور ربات‌ها): بعد از ورود، تو تنظیمات ← «اتصال به پنل» آدرس کامل پنل
@@ -30,9 +36,9 @@ bash <(curl -Ls https://raw.githubusercontent.com/alikaidkhordeh/smsbot/main/ins
 برای این کار برنامه باید با **https** باز بشه. راحت‌ترین راه کلادفلره:
 
 ۱. تو کلادفلر یه رکورد DNS از نوع A بساز، مثلاً `sms.yourdomain.com` به آی‌پی سرور برنامه، با **ابر نارنجی (Proxied)**.
-۲. حالت SSL/TLS رو بذار روی **Flexible**.
+۲. حالت SSL/TLS کلادفلر **Flexible یا Full** باشه، هر دو کار می‌کنه (برنامه روی یه پورت هم http جواب می‌ده هم https). فقط «Full (strict)» نه.
 ۳. نصب‌کننده پورت برنامه رو یکی از پورت‌هایی می‌ذاره که کلادفلر پشتیبانی می‌کنه (۸۴۴۳، ۲۰۸۳، ۲۰۸۷، ۲۰۵۳، ۲۰۹۶ یا ۴۴۳).
-   آدرس می‌شه `https://sms.yourdomain.com:8443` (با یه Origin Rule تو کلادفلر می‌شه پورت رو هم از آدرس حذف کرد).
+   آدرس می‌شه `https://sms.yourdomain.com:8443`. برای حذف `:8443` از آدرس: Rules ← Origin Rules ← Hostname برابر دامنه ← Destination Port رو بکن پورت برنامه.
 ۴. آدرس رو تو Chrome گوشی باز کن ← منوی ⋮ ← «نصب برنامه». از این به بعد با آیکون خودش، مثل یه اپ باز می‌شه.
 
 ## وصل کردن گوشی (یک‌باره)

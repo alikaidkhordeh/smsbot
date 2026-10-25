@@ -2,6 +2,7 @@
 # smsbot installer — SMS alerts & config management for 3X-UI (runs on the same server as the panel)
 #
 #   install / update : bash <(curl -Ls https://raw.githubusercontent.com/alikaidkhordeh/smsbot/main/install.sh)
+#   with a domain    : SMSBOT_DOMAIN=sms.example.com bash <(curl -Ls https://raw.githubusercontent.com/alikaidkhordeh/smsbot/main/install.sh)
 #   new password     : bash <(curl -Ls https://raw.githubusercontent.com/alikaidkhordeh/smsbot/main/install.sh) reset-password
 #   uninstall        : bash <(curl -Ls https://raw.githubusercontent.com/alikaidkhordeh/smsbot/main/install.sh) uninstall
 set -euo pipefail
@@ -14,6 +15,7 @@ SERVICE="smsbot"
 # پورت‌هایی که کلادفلر (ابر نارنجی) با https پشتیبانی می‌کنه؛ اولین پورت آزاد انتخاب می‌شه
 CF_PORTS="8443 2083 2087 2053 2096 443"
 PORT="${SMSBOT_PORT:-}"
+DOMAIN="${SMSBOT_DOMAIN:-}"
 XUI_DB="${XUI_DB:-/etc/x-ui/x-ui.db}"
 XUI_BIN="${XUI_BIN:-/usr/local/x-ui/x-ui}"
 
@@ -50,11 +52,11 @@ green "[1/6] Installing requirements (git, python3)..."
 if command -v apt-get >/dev/null; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq >/dev/null
-  apt-get install -y -qq git python3 curl ca-certificates >/dev/null
+  apt-get install -y -qq git python3 curl ca-certificates openssl >/dev/null
 elif command -v dnf >/dev/null; then
-  dnf install -y -q git python3 curl >/dev/null
+  dnf install -y -q git python3 curl openssl >/dev/null
 elif command -v yum >/dev/null; then
-  yum install -y -q git python3 curl >/dev/null
+  yum install -y -q git python3 curl openssl >/dev/null
 fi
 command -v python3 >/dev/null || die "python3 not found"
 python3 -c 'import sys; sys.exit(sys.version_info < (3, 8))' || die "python 3.8 or newer is needed"
@@ -75,6 +77,13 @@ else
 fi
 mkdir -p "$DATA"
 chmod 700 "$DATA"
+# گواهی خودامضا: همون پورت https هم جواب می‌ده (کلادفلر در حالت Full قبولش می‌کنه)
+if [ ! -f "$DATA/tls/cert.pem" ] && command -v openssl >/dev/null; then
+  mkdir -p "$DATA/tls"
+  openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=${DOMAIN:-smsbot}" \
+    -keyout "$DATA/tls/key.pem" -out "$DATA/tls/cert.pem" >/dev/null 2>&1 || rm -rf "$DATA/tls"
+  [ -f "$DATA/tls/key.pem" ] && chmod 600 "$DATA/tls/key.pem"
+fi
 
 # ───── 3. read panel settings ─────
 green "[3/6] Reading 3X-UI settings..."
@@ -128,10 +137,12 @@ if [ "$FIRST" = 1 ]; then
   [ -n "$TOKEN" ] && ARGS+=(--panel-token "$TOKEN")
   [ -n "$LINK_HOST" ] && ARGS+=(--link-host "$LINK_HOST")
   if [ -n "$CERT" ] && [ -r "$CERT" ] && [ -r "$KEY" ]; then ARGS+=(--app-cert "$CERT" --app-key "$KEY"); fi
+  [ -n "$DOMAIN" ] && ARGS+=(--app-domain "$DOMAIN")
   PASS="$(new_password)"
   ARGS+=(--set-password "$PASS")
   run_app "${ARGS[@]}" >/dev/null
 else
+  [ -n "$DOMAIN" ] && run_app --app-domain "$DOMAIN" >/dev/null
   PORT="$(python3 - "$DATA/smsbot.db" <<'PY'
 import json, sqlite3, sys
 r = sqlite3.connect(sys.argv[1]).execute("SELECT value FROM settings WHERE key = 'app'").fetchone()
@@ -174,22 +185,23 @@ green "[6/6] Checking..."
 sleep 3
 systemctl is-active -q "$SERVICE" || { journalctl -u "$SERVICE" -n 30 --no-pager; die "service did not start"; }
 
-SCHEME=http
-APP_HOST="$(curl -s4 --max-time 6 https://api.ipify.org || hostname -I | awk '{print $1}')"
-if python3 - "$DATA/smsbot.db" <<'PY'
+SERVER_IP="$(curl -s4 --max-time 6 https://api.ipify.org || hostname -I | awk '{print $1}')"
+[ -z "$DOMAIN" ] && DOMAIN="$(python3 - "$DATA/smsbot.db" <<'PY'
 import json, sqlite3, sys
 r = sqlite3.connect(sys.argv[1]).execute("SELECT value FROM settings WHERE key = 'app'").fetchone()
-sys.exit(0 if r and json.loads(r[0]).get("cert") else 1)
+print(json.loads(r[0]).get("address", "") if r else "")
 PY
-then
-  SCHEME=https
-  [ -n "$LINK_HOST" ] && APP_HOST="$LINK_HOST"
-fi
+)"
+CF_PORT=0
+case " $CF_PORTS " in *" $PORT "*) CF_PORT=1 ;; esac
 
 echo
 green "================================================"
 green "  smsbot is running"
-green "  Address : $SCHEME://$APP_HOST:$PORT"
+green "  Address : http://$SERVER_IP:$PORT"
+if [ -n "$DOMAIN" ] && [ "$CF_PORT" = 1 ]; then
+  if [ "$PORT" = 443 ]; then green "  Domain  : https://$DOMAIN"; else green "  Domain  : https://$DOMAIN:$PORT"; fi
+fi
 if [ "$FIRST" = 1 ]; then
   green "  Password: $PASS"
   yellow "  Save this password. You can change it inside the app (Settings)."
@@ -202,11 +214,12 @@ if [ "$LOCAL_PANEL" = 0 ] && [ "$FIRST" = 1 ]; then
   yellow "Next: open the address, log in, go to Settings → Panel, enter your panel address,"
   yellow "      username and password, and press Connect."
 fi
-case " $CF_PORTS " in *" $PORT "*)
+if [ "$CF_PORT" = 1 ]; then
+  D="${DOMAIN:-sms.yourdomain.com}"
   echo
-  echo "Cloudflare (optional, for https://your-domain:$PORT):"
-  echo "  1) DNS: A record  sms.yourdomain.com → $APP_HOST  (Proxied, orange cloud)"
-  [ "$SCHEME" = https ] && echo "  2) SSL/TLS mode: Full" || echo "  2) SSL/TLS mode: Flexible"
-  echo "  3) open https://sms.yourdomain.com:$PORT  (or add an Origin Rule to use it without :$PORT)"
-  ;;
-esac
+  echo "Cloudflare (for https://$D:$PORT and installing it as an app on your phone):"
+  echo "  1) DNS: A record  $D -> $SERVER_IP  with Proxy status = Proxied (orange cloud)"
+  echo "  2) SSL/TLS mode: Flexible or Full both work (not 'Full (strict)')"
+  echo "  3) optional, to drop :$PORT from the address: Rules > Origin Rules > Hostname equals $D"
+  echo "     > Destination Port: rewrite to $PORT   (then open https://$D)"
+fi
