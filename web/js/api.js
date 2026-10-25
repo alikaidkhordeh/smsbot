@@ -67,6 +67,7 @@ const api = {
   connectPanel: p => post('/api/panel/connect', p),
   panelCerts: () => get('/api/panel/certs'),
   testPhone: (phone, line) => post('/api/test/phone', { phone, line }),
+  messageState: id => get('/api/messages/state?id=' + id),
   backup: () => get('/api/backup'),
   restore: data => post('/api/restore', data),
   update: () => post('/api/update'),

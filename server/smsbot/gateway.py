@@ -80,9 +80,11 @@ class Gateway:
         return mid
 
     def state(self, mid):
+        """(وضعیت برنامه، خطا، وضعیت خام اپ). Pending یعنی هنوز رو سرور اپه و گوشی نگرفته؛ Processed یعنی گوشی گرفت."""
         r = self._call("GET", "/messages/" + urllib.parse.quote(mid, safe=""))
         rec = (r.get("recipients") or [{}])[0]
-        return STATE_MAP.get(r.get("state") or rec.get("state"), "sending"), rec.get("error") or ""
+        raw = r.get("state") or rec.get("state") or ""
+        return STATE_MAP.get(raw, "sending"), rec.get("error") or "", raw
 
     def devices(self):
         out = []

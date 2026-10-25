@@ -177,7 +177,7 @@ class Engine:
                          "AND sent_at > ? ORDER BY id LIMIT 30", (util.now_ms() - 3 * util.DAY_MS,))
         for r in rows:
             try:
-                state, err = gw.state(r["gateway_id"])
+                state, err, _ = gw.state(r["gateway_id"])
             except GatewayError:
                 return
             if state != "sending":

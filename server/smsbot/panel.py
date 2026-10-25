@@ -306,6 +306,10 @@ def find_panel(url, host=""):
 
 def resolve_url(url, link_host="", strict=False):
     """آدرس درست پنل. strict: اگه پیدا نشد، با پیام روشن خطا بده؛ وگرنه همون آدرس ورودی (تمیزشده) برمی‌گرده."""
+    if not (url or "").strip():
+        if strict:
+            raise PanelError("اول آدرس پنل رو بنویس.")
+        return ""
     base, state = find_panel(url)
     if state == "forbidden" and link_host:
         base2, state2 = find_panel(url, link_host)  # پنل دامنه داره و آی‌پی رو رد می‌کنه

@@ -188,10 +188,14 @@ App.pages.settings = async view => {
     auth: segVal(view, 'pAuth') === 'login' ? p.auth : 'token', token: $('#pToken').value.trim(),
   });
 
+  // «تست اتصال» با اطلاعات ذخیره‌شده/توکن کار می‌کنه؛ تو حالت «نام کاربری و رمز» خود دکمهٔ «وصل شو» تست هم می‌کنه
+  const syncTestBtn = () => { $('#pTest').hidden = segVal(view, 'pAuth') === 'login' && !p.has_token; };
+  syncTestBtn();
   $('.seg[data-name="pAuth"]').addEventListener('change', e => {
     const login = e.currentTarget.dataset.value === 'login';
     $('#pTokenBox').hidden = login;
     $('#pLoginBox').hidden = !login;
+    syncTestBtn();
   });
   $('.seg[data-name="phMode"]').addEventListener('change', e => { $('#phUrlBox').hidden = e.currentTarget.dataset.value !== 'private'; });
 
@@ -223,13 +227,36 @@ App.pages.settings = async view => {
   $('#phTestBtn').onclick = async e => {
     const n = toEn($('#phTest').value).replace(/\s/g, '');
     if (!/^09\d{9}$/.test(n)) return toast('شمارهٔ درست وارد کن', 'alert');
-    $('#phResult').innerHTML = '';
+    const box = $('#phResult');
+    box.innerHTML = '';
+    let sent;
     try {
-      await busy(e.currentTarget, () => api.testPhone(n, Number(segVal(view, 'phDefault'))));
-      showBox($('#phResult'), true, 'به گوشی رسید؛ چند ثانیه دیگه پیامک می‌رسه');
+      sent = await busy(e.currentTarget, () => api.testPhone(n, Number(segVal(view, 'phDefault'))));
     } catch (err) {
-      showBox($('#phResult'), false, esc(err.message));
+      return showBox(box, false, esc(err.message));
     }
+    // پیامک اول به سرور اپ می‌ره، بعد گوشی برش می‌داره و از سیم‌کارت می‌فرسته؛ مرحله‌به‌مرحله دنبالش می‌کنیم
+    const STEP = {
+      Pending: 'رسید به سرور اپ؛ منتظرم گوشی برش داره…',
+      Processed: 'گوشی گرفت و داره از سیم‌کارت می‌فرسته…',
+    };
+    box.innerHTML = `<div class="result" style="background:var(--info-soft);color:var(--info)">${icon('clock')}رسید به سرور اپ؛ منتظرم گوشی برش داره…</div>`;
+    for (let i = 0; i < 20; i++) {
+      await wait(3000);
+      if (!document.body.contains(box)) return;
+      let st;
+      try { st = await api.messageState(sent.id); } catch { continue; }
+      if (st.status === 'delivered') return showBox(box, true, 'به گیرنده رسید');
+      if (st.status === 'sent') return showBox(box, true, 'از سیم‌کارت گوشی فرستاده شد');
+      if (st.status === 'failed') return showBox(box, false, 'گوشی نتونست بفرسته: ' + esc(st.error || 'علت نامعلوم'));
+      if (STEP[st.raw]) box.querySelector('.result').lastChild.textContent = STEP[st.raw];
+    }
+    box.innerHTML = `<div class="result danger" style="align-items:flex-start">${icon('alert')}<div>
+      گوشی پیامک رو از سرور اپ برنداشت. تو اپ گوشی:<br>
+      ۱. دکمهٔ <b>START SERVICE</b> پایین صفحه رو بزن (باید یه اعلان ثابت بیاد).<br>
+      ۲. Settings ← Cloud Server ← <b>Notification channel</b> رو بذار <b>SSE Only</b>، اپ رو کامل ببند و دوباره باز کن.<br>
+      ۳. بهینه‌سازی باتری اپ رو خاموش کن.<br>
+      وضعیت این پیامک تو «تاریخچه» خودکار به‌روز می‌شه.</div></div>`;
   };
 
   $('#aUseCert').onclick = async e => {

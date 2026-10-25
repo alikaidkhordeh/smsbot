@@ -69,7 +69,6 @@ const MOCK = {
   },
 };
 
-const wait = (ms = 120) => new Promise(r => setTimeout(r, ms));
 const clone = o => JSON.parse(JSON.stringify(o));
 const fakeId = (n, len) => Array.from({ length: len }, (_, i) => ((n * 7919 + i * 104729) % 36).toString(36)).join('');
 MOCK.clients.forEach(c => Object.assign(c, { email: c.account, inboundId: c.id % 3 === 0 ? 2 : 1, limitIp: 0, uuid: fakeId(c.id, 32), subId: fakeId(c.id + 50, 16) }));
@@ -155,7 +154,8 @@ const api = {
   async testPanel() { await wait(1100); return { ok: true, version: 'v3.5.0', clients: MOCK.clients.length, linkHost: 'sv1.example.com' }; },
   async connectPanel() { await wait(1300); return { ok: true, version: 'v3.5.0', clients: MOCK.clients.length, auth: 'token' }; },
   async panelCerts() { await wait(); return { cert: '/root/cert/sv1.example.com/fullchain.pem', key: '/root/cert/sv1.example.com/privkey.pem', domain: 'sv1.example.com' }; },
-  async testPhone() { await wait(1300); return true; },
+  async testPhone() { await wait(1300); return { id: 1 }; },
+  async messageState() { await wait(800); return { status: 'delivered', raw: 'Delivered', error: '' }; },
   async backup() { await wait(); return { app: 'smsbot', contacts: MOCK.clients.filter(c => c.phone).map(c => ({ email: c.email, name: c.name, phone: c.phone })) }; },
   async restore(data) { await wait(); return { contacts: (data.contacts || []).length }; },
   async update() { await wait(1500); return { updated: false, version: '0.2.0' }; },

@@ -500,10 +500,24 @@ class App:
             if not phone:
                 raise ApiError("شمارهٔ درست وارد کن.")
             s = d.settings()["phone"]
-            e.send_now(phone, "پیامک آزمایشی پنل پیامک؛ اتصال گوشی درسته.", _int(b.get("line"), s.get("defaultLine", 1), 1, 3), "", "test")
+            mid = e.send_now(phone, "پیامک آزمایشی پنل پیامک؛ اتصال گوشی درسته.", _int(b.get("line"), s.get("defaultLine", 1), 1, 3), "", "test")
             e.last_device = 0
             e.wake.set()
-            return True
+            return {"id": mid}
+
+        @route("GET", "/api/messages/state")
+        def message_state(h, b, q):
+            """وضعیت زندهٔ یک پیامک از اپ گوشی (برای دنبال کردن پیامک آزمایشی)."""
+            row = d.one("SELECT id, status, error, gateway_id FROM messages WHERE id = ?", (_int(q.get("id")),))
+            if not row:
+                raise ApiError("پیامک پیدا نشد.", 404)
+            raw = ""
+            if row["gateway_id"] and row["status"] == "sending":
+                state, err, raw = e.gateway().state(row["gateway_id"])
+                if state != "sending":
+                    d.update_message(row["id"], status=state, error=err or None)
+                    row.update(status=state, error=err)
+            return {"status": row["status"], "raw": raw, "error": row["error"] or ""}
 
         @route("GET", "/api/history")
         def history(h, b, q):
@@ -618,6 +632,8 @@ class App:
 
         def test_cfg(cfg):
             p = Panel(cfg)
+            if not p.configured:
+                raise ApiError("هنوز به پنل وصل نشدی: تو بخش «نام کاربری و رمز پنل» دکمهٔ «وصل شو و توکن بساز» رو بزن، یا توکن API رو وارد کن.")
             n = len(p.clients())
             try:
                 ver = p.status().get("version", "")

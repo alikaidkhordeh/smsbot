@@ -7,6 +7,7 @@ const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
 const fa = v => String(v ?? '').replace(/\d/g, d => FA_DIGITS[d]);
 const toEn = s => String(s ?? '').replace(/[۰-۹]/g, d => FA_DIGITS.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
 const icon = (name, cls = '') => `<svg class="i ${cls}"><use href="#i-${name}"/></svg>`;
+const wait = (ms = 120) => new Promise(r => setTimeout(r, ms));
 
 // حجم به گیگ → «۸۵۰ مگ» یا «۱٫۵ گیگ»
 function vol(gb) {
