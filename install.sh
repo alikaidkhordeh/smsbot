@@ -48,15 +48,27 @@ if [ "$ACTION" = "reset-password" ]; then
 fi
 
 # ───── 1. packages ─────
-green "[1/6] Installing requirements (git, python3)..."
-if command -v apt-get >/dev/null; then
-  export DEBIAN_FRONTEND=noninteractive
-  apt-get update -qq >/dev/null
-  apt-get install -y -qq git python3 curl ca-certificates openssl >/dev/null
-elif command -v dnf >/dev/null; then
-  dnf install -y -q git python3 curl openssl >/dev/null
-elif command -v yum >/dev/null; then
-  yum install -y -q git python3 curl openssl >/dev/null
+green "[1/6] Checking requirements (git, python3, curl, openssl)..."
+# فقط چیزهایی که نیست نصب می‌شه؛ ابزارهای موجود (که ربات‌های دیگه ازشون استفاده می‌کنن) دست نمی‌خورن
+NEED=""
+for c in git python3 curl openssl; do command -v "$c" >/dev/null || NEED="$NEED $c"; done
+[ -d /etc/ssl/certs ] || NEED="$NEED ca-certificates"
+if [ -n "$NEED" ]; then
+  echo "  installing:$NEED"
+  if command -v apt-get >/dev/null; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq >/dev/null
+    # shellcheck disable=SC2086
+    apt-get install -y -qq --no-upgrade $NEED >/dev/null
+  elif command -v dnf >/dev/null; then
+    # shellcheck disable=SC2086
+    dnf install -y -q $NEED >/dev/null
+  elif command -v yum >/dev/null; then
+    # shellcheck disable=SC2086
+    yum install -y -q $NEED >/dev/null
+  fi
+else
+  echo "  all present, nothing to install"
 fi
 command -v python3 >/dev/null || die "python3 not found"
 python3 -c 'import sys; sys.exit(sys.version_info < (3, 8))' || die "python 3.8 or newer is needed"
