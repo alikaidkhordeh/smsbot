@@ -635,7 +635,7 @@ class App:
         def test_panel(h, b, q):
             src = b.get("panel")
             cfg = merged_section("panel", src) if src else d.settings()["panel"]
-            cfg["url"] = resolve_url(cfg.get("url"), cfg.get("linkHost") or "")
+            cfg["url"] = resolve_url(cfg.get("url"), cfg.get("linkHost") or "", strict=True)
             r = test_cfg(cfg)
             r["url"] = cfg["url"]
             if not src:
@@ -645,7 +645,7 @@ class App:
 
         @route("POST", "/api/panel/connect")
         def panel_connect(h, b, q):
-            url = resolve_url(str(b.get("url") or ""), d.settings()["panel"].get("linkHost") or "")
+            url = resolve_url(str(b.get("url") or ""), d.settings()["panel"].get("linkHost") or "", strict=True)
             p = Panel({"url": url, "auth": "login", "username": b.get("username") or "", "password": b.get("password") or ""})
             p.login(str(b.get("twoFactorCode") or "").strip())
             cfg = dict(d.settings()["panel"], url=url)

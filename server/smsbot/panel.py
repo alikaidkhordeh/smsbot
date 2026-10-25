@@ -4,6 +4,7 @@
 - توکن API (پیشنهادی): هدر Authorization: Bearer؛ نه کوکی می‌خواد نه CSRF، پس «وارد نشدن» پیش نمیاد.
 - نام کاربری و رمز: لاگین + توکن CSRF؛ اگه نشست منقضی شد، خودکار دوباره لاگین می‌کنه.
 """
+import http.client
 import http.cookiejar
 import json
 import secrets
@@ -28,6 +29,7 @@ class Panel:
         self.password = cfg.get("password") or ""
         # آدرس عمومی سرور: پنل لینک‌ها رو با هدر Host می‌سازه و اگه دامنه داشته باشه، Host دیگه رو رد می‌کنه (۴۰۳)
         self.host = (cfg.get("linkHost") or "").strip()
+        self.timeout = 25
         self.csrf = ""
         self.lock = threading.Lock()
         self._sub = None
@@ -57,13 +59,14 @@ class Panel:
         headers.update(extra_headers or {})
         req = urllib.request.Request(self.base + path, data=data, method=method, headers=headers)
         try:
-            with self.opener.open(req, timeout=25) as resp:
+            with self.opener.open(req, timeout=self.timeout) as resp:
                 raw = resp.read()
         except urllib.error.HTTPError as e:
             if e.code in (401, 403, 404):
                 raise _AuthExpired(e.code)
             raise PanelError("پنل خطای %s برگردوند." % e.code)
-        except (urllib.error.URLError, OSError) as e:
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
+            # HTTPException: مثلاً http ساده به پورتی که فقط https جواب می‌ده
             raise PanelError("به پنل وصل نشد (%s). آدرس و پورت رو چک کن." % getattr(e, "reason", e))
         try:
             return json.loads(raw.decode() or "{}")
@@ -216,41 +219,108 @@ class Panel:
         return token
 
 
-def candidate_bases(url):
-    """کاربر معمولاً آدرس صفحهٔ داشبورد پنل رو کپی می‌کنه (…/مسیر/panel/ یا …/panel/inbounds)؛ API از خود …/مسیر/
-    شروع می‌شه. همهٔ حالت‌های ممکن، به ترتیب احتمال."""
-    url = (url or "").strip()
+# ───── پیدا کردن خودکار آدرس درست پنل ─────
+# کاربر هر آدرسی از پنل رو ممکنه کپی کنه: صفحهٔ داشبورد (…/مسیر/panel/)، یه صفحهٔ دیگه (…/panel/inbounds)،
+# بدون http/https، یا حتی بدون پورت. API پنل از «مسیر پایه» شروع می‌شه؛ همهٔ حالت‌ها امتحان می‌شن.
+COMMON_PORTS = (2053, 2087, 2083, 2096, 8443, 54321, 443)
+PROBE_TIMEOUT = 6
+
+
+def candidate_bases(url, guess_ports=False):
+    """آدرس‌های احتمالی پنل به ترتیب احتمال (هر کدوم با / تموم می‌شه)."""
+    url = (url or "").strip().split("#")[0]
     if not url:
-        return [""]
+        return []
+    schemes = None
+    if "://" not in url:
+        schemes = ["https", "http"]  # کاربر http/https رو ننوشته
+        url = "https://" + url
     p = urllib.parse.urlsplit(url)
-    path = p.path.rstrip("/")
+    schemes = schemes or [p.scheme]
+    segs = [s for s in p.path.split("/") if s]
     paths = []
-    i = path.find("/panel")
-    while i != -1:
-        end = i + len("/panel")
-        if end == len(path) or path[end] == "/":
-            paths.append(path[:i])
-        i = path.find("/panel", i + 1)
-    paths.append(path)
+    if "panel" in segs:  # رایج‌ترین حالت: آدرس صفحهٔ داشبورد
+        paths.append(segs[:segs.index("panel")])
+    paths += [segs[:n] for n in range(len(segs), -1, -1)]  # بلندترین تا ریشه
+    netlocs = [p.netloc]
+    if guess_ports and p.port is None:
+        netlocs = ["%s:%d" % (p.hostname, port) for port in COMMON_PORTS]
     out = []
-    for x in paths:
-        u = urllib.parse.urlunsplit((p.scheme, p.netloc, x, "", "")) + "/"
-        if u not in out:
-            out.append(u)
+    for netloc in netlocs:
+        for scheme in schemes:
+            for segs_ in paths:
+                u = "%s://%s/%s" % (scheme, netloc, "/".join(segs_) + "/" if segs_ else "")
+                if u not in out:
+                    out.append(u)
     return out
 
 
-def resolve_url(url, link_host=""):
-    """اولین آدرسی که صفحهٔ ورود پنل ازش جواب می‌ده؛ اگه هیچ‌کدوم جواب نداد همون اولی."""
+def _probe(base, host=""):
+    """'ok' پنل نسخهٔ ۳، 'old' پنل قدیمی، 'forbidden' پنل جواب داد ولی رد کرد (۴۰۳)، None پنلی نیست."""
+    p = Panel({"url": base, "linkHost": host})
+    p.timeout = PROBE_TIMEOUT
+    try:
+        r = p._raw("GET", "/csrf-token")
+        if isinstance(r, dict) and r.get("success"):
+            return "ok"
+    except _AuthExpired as e:
+        if e.code == 403:
+            return "forbidden"
+    except PanelError:
+        pass
+    try:  # پنل‌های قدیمی‌تر (نسخهٔ ۲) این آدرس رو ندارن؛ صفحهٔ ورودشون رو نگاه می‌کنیم
+        req = urllib.request.Request(base, headers={"User-Agent": util.USER_AGENT, **({"Host": host} if host else {})})
+        with p.opener.open(req, timeout=PROBE_TIMEOUT) as resp:
+            html = resp.read(20000).decode("utf-8", "replace").lower()
+        if "x-ui" in html or "3x-ui" in html:
+            return "old"
+    except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException):
+        pass
+    return None
+
+
+def find_panel(url, host=""):
+    """(آدرس پایهٔ درست، وضعیت). همهٔ حالت‌ها همزمان امتحان می‌شن و اولینِ به ترتیب احتمال برمی‌گرده."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    url = (url or "").strip()
+    try:
+        gave_port = urllib.parse.urlsplit(url if "://" in url else "https://" + url).port is not None
+    except ValueError:
+        gave_port = True
+    best_bad = (None, None)
+    for guess in ((False,) if gave_port else (False, True)):  # اگه پورت نداده، دور دوم پورت‌های رایج پنل
+        cands = candidate_bases(url, guess_ports=guess)
+        if not cands:
+            break
+        with ThreadPoolExecutor(max_workers=16) as pool:
+            results = list(pool.map(lambda c: _probe(c, host), cands))
+        for c, r in zip(cands, results):
+            if r == "ok":
+                return c, "ok"
+        best_bad = next(((c, r) for c, r in zip(cands, results) if r in ("old", "forbidden")), best_bad)
+        if best_bad[0]:
+            break
+    return best_bad
+
+
+def resolve_url(url, link_host="", strict=False):
+    """آدرس درست پنل. strict: اگه پیدا نشد، با پیام روشن خطا بده؛ وگرنه همون آدرس ورودی (تمیزشده) برمی‌گرده."""
+    base, state = find_panel(url)
+    if state == "forbidden" and link_host:
+        base2, state2 = find_panel(url, link_host)  # پنل دامنه داره و آی‌پی رو رد می‌کنه
+        if state2 == "ok":
+            return base2
+    if state == "ok":
+        return base
+    if strict:
+        if state == "old":
+            raise PanelError("پنل پیدا شد ولی نسخه‌ش قدیمیه؛ این برنامه با 3X-UI نسخهٔ ۳ به بعد کار می‌کنه.")
+        if state == "forbidden":
+            raise PanelError("پنل پیدا شد ولی درخواست رو رد کرد (۴۰۳). اگه تو پنل دامنه تنظیم کردی، آدرس رو با همون دامنه بده نه آی‌پی.")
+        raise PanelError("پنل با این آدرس پیدا نشد. آدرسی که پنل رو تو مرورگر باهاش باز می‌کنی رو کامل کپی کن (با پورت).")
     cands = candidate_bases(url)
-    for c in cands:
-        try:
-            r = Panel({"url": c, "linkHost": link_host})._raw("GET", "/csrf-token")
-            if isinstance(r, dict) and r.get("success"):
-                return c
-        except (PanelError, _AuthExpired):
-            continue
-    return cands[0]
+    return cands[0] if cands else ""
 
 
 class _AuthExpired(Exception):

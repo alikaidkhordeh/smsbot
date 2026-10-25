@@ -57,7 +57,7 @@ App.pages.settings = async view => {
           <div class="field"><label for="pType">نوع پنل</label>
             <select class="select" id="pType"><option value="3x-ui">3X-UI (نسخهٔ ۳ به بعد)</option><option disabled>پاسارگاد (به‌زودی)</option></select></div>
           <div class="field"><label for="pUrl">آدرس کامل پنل</label><input class="input ltr" id="pUrl" value="${esc(p.url)}" spellcheck="false" placeholder="https://panel.example.com:2053/abc123/">
-            <span class="hint">همون آدرسی که پنل رو تو مرورگر باهاش باز می‌کنی (با http یا https، پورت و مسیر). اگه برنامه روی خود سرور پنله: http://127.0.0.1:پورت/مسیر/</span></div>
+            <span class="hint">هر آدرسی از پنل رو که تو مرورگر باز می‌کنی کپی کن (مثلاً صفحهٔ داشبورد)؛ مسیر درست، http یا https و حتی پورت رو خودش پیدا می‌کنه.</span></div>
         </div>
         <div class="field"><label for="pHost">آدرس سرور برای لینک‌ها <span class="muted">(اختیاری)</span></label>
           <input class="input ltr" id="pHost" value="${esc(p.linkHost)}" spellcheck="false" placeholder="sv1.example.com">
