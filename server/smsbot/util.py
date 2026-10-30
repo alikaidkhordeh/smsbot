@@ -45,9 +45,27 @@ def to_fa(s):
     return str(s).translate(_TO_FA)
 
 
+# کاراکترهای نامرئی که موقع کپی شماره از مخاطبین/تلگرام/واتس‌اپ لای رقم‌ها میان (جهت متن، فاصلهٔ صفر)
+_INVISIBLE = re.compile("[ ​-‏‪-‮⁦-⁩﻿]")
+
+
+def normalize_phone(s):
+    """شمارهٔ موبایل واردشده توسط علی، از هر شکلی (+98، 0098، 98، بدون صفر، با فاصله و خط تیره و پرانتز و
+    کاراکتر نامرئی، رقم فارسی یا عربی) → 09xxxxxxxxx، یا '' اگه شمارهٔ موبایل ایران نبود."""
+    d = re.sub(r"[^0-9]", "", to_en(s))
+    if d.startswith("0098"):
+        d = d[4:]
+    elif d.startswith("98") and len(d) == 12:
+        d = d[2:]
+    if len(d) == 10 and d.startswith("9"):
+        d = "0" + d
+    return d if re.fullmatch(r"09\d{9}", d) else ""
+
+
 def clean_phone(s):
-    """هر شکلی از شمارهٔ ایرانی → 09xxxxxxxxx یا '' اگه نامعتبر بود."""
-    m = PHONE_RE.search(to_en(s).replace(" ", "").replace("-", ""))
+    """پیدا کردن شمارهٔ ایرانی داخل یه متن (مثلاً Comment پنل: «رضا 0912...») → 09xxxxxxxxx یا ''."""
+    text = _INVISIBLE.sub("", to_en(s))
+    m = PHONE_RE.search(re.sub(r"(?<=\d)[ \-().]+(?=\d)", "", text))
     return "0" + m.group(1) if m else ""
 
 

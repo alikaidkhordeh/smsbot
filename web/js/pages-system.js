@@ -271,8 +271,8 @@ App.pages.settings = async view => {
   };
 
   $('#phTestBtn').onclick = async e => {
-    const n = toEn($('#phTest').value).replace(/\s/g, '');
-    if (!/^09\d{9}$/.test(n)) return toast('شمارهٔ درست وارد کن', 'alert');
+    const n = normalizePhone($('#phTest').value);
+    if (!n || !phoneOk(n)) return toast(phoneError(n), 'alert');
     const box = $('#phResult');
     box.innerHTML = '';
     let sent;

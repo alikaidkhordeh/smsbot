@@ -7,6 +7,18 @@ const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
 const fa = v => String(v ?? '').replace(/\d/g, d => FA_DIGITS[d]);
 const toEn = s => String(s ?? '').replace(/[۰-۹]/g, d => FA_DIGITS.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
 const icon = (name, cls = '') => `<svg class="i ${cls}"><use href="#i-${name}"/></svg>`;
+
+// شماره از هر شکلی → 09xxxxxxxxx. کپی از مخاطبین/تلگرام/واتس‌اپ معمولاً کاراکترهای نامرئی جهت متن
+// (مثل U+200E و U+202A) لای رقم‌ها می‌ذاره، یا با +98، فاصله، خط تیره و پرانتز میاد؛ فقط رقم‌ها رو نگه می‌داریم.
+function normalizePhone(v) {
+  let d = toEn(v).replace(/[^0-9]/g, '');
+  if (d.startsWith('0098')) d = d.slice(4);
+  else if (d.startsWith('98') && d.length === 12) d = d.slice(2);
+  if (d.length === 10 && d.startsWith('9')) d = '0' + d;
+  return d;
+}
+const phoneOk = p => !p || /^09\d{9}$/.test(p);
+const phoneError = p => `شمارهٔ «${fa(p)}» درست نیست؛ شمارهٔ موبایل باید ۱۱ رقم باشه و با ۰۹ شروع بشه.`;
 const wait = (ms = 120) => new Promise(r => setTimeout(r, ms));
 
 // حجم به گیگ → «۸۵۰ مگ» یا «۱٫۵ گیگ»
@@ -388,6 +400,15 @@ function bindGlobalEvents() {
       ta.focus();
       ta.selectionStart = ta.selectionEnd = pos + varBtn.dataset.var.length;
       ta.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  });
+
+  // بعد از تایپ یا پیست شماره، همون لحظه به شکل تمیز نشون داده بشه (که معلوم باشه درست خونده شده)
+  document.addEventListener('focusout', e => {
+    const el = e.target;
+    if (el.matches?.('input[inputmode="tel"]') && el.value) {
+      const n = normalizePhone(el.value);
+      if (/^09\d{9}$/.test(n)) el.value = n;
     }
   });
 

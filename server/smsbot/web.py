@@ -392,7 +392,7 @@ class App:
             account = clean_account(b.get("account"))
             if not account:
                 raise ApiError("اسم کانفیگ رو بنویس.")
-            phone = util.clean_phone(b.get("phone")) if b.get("phone") else ""
+            phone = util.normalize_phone(b.get("phone")) if b.get("phone") else ""
             if b.get("phone") and not phone:
                 raise ApiError("شماره باید ۱۱ رقم باشه و با ۰۹ شروع بشه.")
             name = str(b.get("name") or "").strip()
@@ -411,7 +411,7 @@ class App:
         def client_update(h, b, q):
             email = str(b.get("email") or "")
             account = clean_account(b.get("account") or email)
-            phone = util.clean_phone(b.get("phone")) if b.get("phone") else ""
+            phone = util.normalize_phone(b.get("phone")) if b.get("phone") else ""
             if b.get("phone") and not phone:
                 raise ApiError("شماره باید ۱۱ رقم باشه و با ۰۹ شروع بشه.")
             name = str(b.get("name") or "").strip()
@@ -531,7 +531,7 @@ class App:
 
         @route("POST", "/api/test/phone")
         def test_phone(h, b, q):
-            phone = util.clean_phone(b.get("phone"))
+            phone = util.normalize_phone(b.get("phone"))
             if not phone:
                 raise ApiError("شمارهٔ درست وارد کن.")
             s = d.settings()["phone"]
@@ -819,7 +819,7 @@ class App:
                 raise ApiError("این فایل پشتیبان این برنامه نیست.")
             for c in b.get("contacts") or []:
                 if c.get("email"):
-                    d.save_contact(c["email"], c.get("name") or "", util.clean_phone(c.get("phone")) if c.get("phone") else "")
+                    d.save_contact(c["email"], c.get("name") or "", util.normalize_phone(c.get("phone")) if c.get("phone") else "")
             if b.get("templates"):
                 with d.lock:
                     d.conn.execute("DELETE FROM templates")

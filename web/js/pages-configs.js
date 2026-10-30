@@ -11,8 +11,7 @@ const FILTERS = [
 const PAGE_SIZE = 200; // با صدها کانفیگ، صفحه سنگین نشه
 const inboundLabel = i => `${i.remark} · پورت ${fa(i.port)}`;
 const numOrNull = v => { const n = Number(toEn(v).trim()); return v.trim() === '' || isNaN(n) ? null : n; };
-const phoneOk = p => !p || /^09\d{9}$/.test(p);
-const cleanPhone = v => toEn(v).replace(/[\s-]/g, '');
+const cleanPhone = normalizePhone;
 const idsOf = c => (c.inboundIds && c.inboundIds.length ? c.inboundIds : [c.inboundId]).filter(Boolean);
 const onAllInbounds = (c, inbounds) => inbounds.length > 1 && inbounds.every(i => idsOf(c).includes(i.id));
 function inboundNames(c, inbounds) {
@@ -217,7 +216,7 @@ async function openConfig(c, tab = 'info', ctx = null) {
     e.preventDefault();
     const account = $('#cAcc', m).value.trim(), phone = cleanPhone($('#cPhone', m).value);
     if (!account) return ($('#cErr', m).textContent = 'اسم کانفیگ نمی‌تونه خالی باشه.');
-    if (!phoneOk(phone)) return ($('#cErr', m).textContent = 'شماره باید ۱۱ رقم باشه و با ۰۹ شروع بشه.');
+    if (!phoneOk(phone)) return ($('#cErr', m).textContent = phoneError(phone));
     await busy(e.submitter, () => api.saveClient(c.email, {
       account, phone, name: $('#cName', m).value.trim(),
       limitIp: numOrNull($('#cLimit', m).value) || 0, enabled: $('[name="cEnabled"]', m).checked,
@@ -308,7 +307,7 @@ function openAddConfig({ clients, inbounds }) {
     const inboundIds = boxes.filter(b => b.checked).map(b => Number(b.value));
     if (!inboundIds.length) return (err.textContent = 'حداقل یه اینباند انتخاب کن.');
     if (!account) return (err.textContent = 'اسم کانفیگ رو بنویس.');
-    if (!phoneOk(phone)) return (err.textContent = 'شماره باید ۱۱ رقم باشه و با ۰۹ شروع بشه.');
+    if (!phoneOk(phone)) return (err.textContent = phoneError(phone));
     try { localStorage.setItem('smsbot-inbounds', JSON.stringify(inboundIds)); } catch { /* اختیاری */ }
     try {
       const created = await busy(e.submitter, () => api.addClient({
